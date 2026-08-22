@@ -1,0 +1,11 @@
+# Build directories
+build/
+
+# Object files
+*.o
+
+# Manual executables
+fastphysics
+
+# Editor / OS
+.DS_Store
