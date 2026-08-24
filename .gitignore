@@ -4,8 +4,8 @@ build/
 # Object files
 *.o
 
-# Manual executables
-fastphysics
+# Manual executable in the repository root
+/fastphysics
 
 # Editor / OS
 .DS_Store

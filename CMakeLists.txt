@@ -6,15 +6,42 @@ project(
     LANGUAGES CXX
 )
 
+# Core library
+
+add_library(
+    fastphysics_core
+    src/vec3.cpp
+)
+
+target_include_directories(
+    fastphysics_core
+    PUBLIC
+    include
+)
+
+target_compile_features(
+    fastphysics_core
+    PUBLIC
+    cxx_std_20
+)
+
+set_target_properties(
+    fastphysics_core
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+# Main executable
+
 add_executable(
     fastphysics
     src/main.cpp
 )
 
-target_compile_features(
+target_link_libraries(
     fastphysics
     PRIVATE
-    cxx_std_20
+    fastphysics_core
 )
 
 set_target_properties(
@@ -23,9 +50,53 @@ set_target_properties(
     CXX_EXTENSIONS OFF
 )
 
+# Tests
+
+enable_testing()
+
+add_executable(
+    fastphysics_tests
+    tests/vec3_tests.cpp
+)
+
+target_link_libraries(
+    fastphysics_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    fastphysics_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME vec3_tests
+    COMMAND fastphysics_tests
+)
+
+# Compiler warnings
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(
+        fastphysics_core
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
         fastphysics
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        fastphysics_tests
         PRIVATE
         -Wall
         -Wextra
