@@ -1,21 +1,38 @@
-#include "fastphysics/vec3.hpp"
+#include "fastphysics/particle.hpp"
 
 #include <iostream>
+#include <vector>
 
 int main()
 {
-    const fastphysics::Vec3 position{1.0, 2.0, 3.0};
-    const fastphysics::Vec3 velocity{0.5, 1.0, -0.5};
+    std::vector<fastphysics::Particle> particles;
 
-    const fastphysics::Vec3 result = position + velocity;
+    particles.reserve(3);
+
+    particles.push_back({
+        {0.0, 0.0, 0.0},
+        {0.0, 0.0, 0.0},
+        {},
+        10.0
+    });
+
+    particles.push_back({
+        {1.0, 0.0, 0.0},
+        {0.0, 1.0, 0.0},
+        {},
+        1.0
+    });
+
+    particles.push_back({
+        {-1.0, 0.0, 0.0},
+        {0.0, -1.0, 0.0},
+        {},
+        1.0
+    });
 
     std::cout
-        << result.x << ' '
-        << result.y << ' '
-        << result.z << '\n';
-
-    std::cout
-        << "Norm: "
-        << fastphysics::norm(result)
+        << "FastPhysics\n"
+        << "Particles: "
+        << particles.size()
         << '\n';
 }
