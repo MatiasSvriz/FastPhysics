@@ -1,3 +1,4 @@
+#include "fastphysics/gravity.hpp"
 #include "fastphysics/particle.hpp"
 
 #include <iostream>
@@ -5,34 +6,38 @@
 
 int main()
 {
-    std::vector<fastphysics::Particle> particles;
+    std::vector<fastphysics::Particle> particles{
+        {
+            {0.0, 0.0, 0.0},
+            {},
+            {},
+            2.0
+        },
+        {
+            {2.0, 0.0, 0.0},
+            {},
+            {},
+            3.0
+        }
+    };
 
-    particles.reserve(3);
-
-    particles.push_back({
-        {0.0, 0.0, 0.0},
-        {0.0, 0.0, 0.0},
-        {},
-        10.0
-    });
-
-    particles.push_back({
-        {1.0, 0.0, 0.0},
-        {0.0, 1.0, 0.0},
-        {},
-        1.0
-    });
-
-    particles.push_back({
-        {-1.0, 0.0, 0.0},
-        {0.0, -1.0, 0.0},
-        {},
-        1.0
-    });
+    fastphysics::compute_accelerations(
+        particles,
+        1.0,
+        0.0
+    );
 
     std::cout
-        << "FastPhysics\n"
-        << "Particles: "
-        << particles.size()
-        << '\n';
+        << "FastPhysics - N-body CPU reference\n\n";
+
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        const auto& acceleration = particles[i].acceleration;
+
+        std::cout
+            << "Particle " << i
+            << " acceleration: ("
+            << acceleration.x << ", "
+            << acceleration.y << ", "
+            << acceleration.z << ")\n";
+    }
 }

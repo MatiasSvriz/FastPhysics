@@ -6,11 +6,20 @@ project(
     LANGUAGES CXX
 )
 
+# Options
+
+option(
+    FASTPHYSICS_ENABLE_SANITIZERS
+    "Enable AddressSanitizer and UndefinedBehaviorSanitizer"
+    OFF
+)
+
 # Core library
 
 add_library(
     fastphysics_core
     src/vec3.cpp
+    src/gravity.cpp
 )
 
 target_include_directories(
@@ -97,6 +106,30 @@ set_target_properties(
     CXX_EXTENSIONS OFF
 )
 
+# Gravity tests
+
+add_executable(
+    gravity_tests
+    tests/gravity_tests.cpp
+)
+
+target_link_libraries(
+    gravity_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    gravity_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME gravity_tests
+    COMMAND gravity_tests
+)
+
 add_test(
     NAME particle_tests
     COMMAND particle_tests
@@ -135,5 +168,85 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall
         -Wextra
         -Wpedantic
+    )
+
+    target_compile_options(
+    gravity_tests
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    )
+endif()
+
+# Sanitizers
+
+if(
+    FASTPHYSICS_ENABLE_SANITIZERS
+    AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+)
+    set(
+        FASTPHYSICS_SANITIZER_FLAGS
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+    )
+
+    # Instrument the core library during compilation.
+    target_compile_options(
+        fastphysics_core
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Main executable.
+    target_compile_options(
+        fastphysics
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        fastphysics
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Vec3 tests.
+    target_compile_options(
+        fastphysics_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        fastphysics_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Particle tests.
+    target_compile_options(
+        particle_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        particle_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    #Gravity tests.
+    target_compile_options(
+    gravity_tests
+    PRIVATE
+    ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        gravity_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 endif()
