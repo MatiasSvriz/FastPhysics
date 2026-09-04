@@ -25,6 +25,7 @@ add_library(
     src/vec3.cpp
     src/gravity.cpp
     src/integrator.cpp
+    src/simulation.cpp
 )
 
 target_include_directories(
@@ -168,6 +169,30 @@ add_test(
     COMMAND integrator_tests
 )
 
+# Simulation tests
+
+add_executable(
+    simulation_tests
+    tests/simulation_tests.cpp
+)
+
+target_link_libraries(
+    simulation_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    simulation_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME simulation_tests
+    COMMAND simulation_tests
+)
+
 # ---------------------------------------------------------------------------
 # Compiler warnings
 # ---------------------------------------------------------------------------
@@ -215,6 +240,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
     target_compile_options(
         integrator_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        simulation_tests
         PRIVATE
         -Wall
         -Wextra
@@ -304,6 +337,19 @@ if(
 
     target_link_options(
         integrator_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Simulation tests.
+    target_compile_options(
+        simulation_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        simulation_tests
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )

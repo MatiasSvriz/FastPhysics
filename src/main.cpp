@@ -1,18 +1,13 @@
-#include "fastphysics/gravity.hpp"
-#include "fastphysics/integrator.hpp"
 #include "fastphysics/particle.hpp"
+#include "fastphysics/simulation.hpp"
 
 #include <cstddef>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 int main()
 {
-    constexpr double gravitational_constant = 1.0;
-    constexpr double softening = 0.01;
-    constexpr double dt = 0.001;
-    constexpr std::size_t number_of_steps = 1000;
-
     std::vector<fastphysics::Particle> particles{
         {
             {-1.0, 0.0, 0.0},
@@ -28,24 +23,32 @@ int main()
         }
     };
 
-    for (std::size_t step = 0; step < number_of_steps; ++step) {
-        fastphysics::compute_accelerations(
-            particles,
-            gravitational_constant,
-            softening
-        );
+    const fastphysics::SimulationConfig config{
+        .gravitational_constant = 1.0,
+        .softening = 0.01,
+        .dt = 0.001
+    };
 
-        fastphysics::euler_step(
-            particles,
-            dt
-        );
-    }
+    fastphysics::Simulation simulation{
+        std::move(particles),
+        config
+    };
 
-    std::cout << "FastPhysics - N-body CPU reference\n\n";
+    constexpr std::size_t number_of_steps = 1000;
 
-    for (std::size_t i = 0; i < particles.size(); ++i) {
-        const auto& position = particles[i].position;
-        const auto& velocity = particles[i].velocity;
+    simulation.run(number_of_steps);
+
+    std::cout
+        << "FastPhysics - N-body CPU reference\n"
+        << "Simulation time: "
+        << simulation.time()
+        << "\n\n";
+
+    const auto& final_particles = simulation.particles();
+
+    for (std::size_t i = 0; i < final_particles.size(); ++i) {
+        const auto& position = final_particles[i].position;
+        const auto& velocity = final_particles[i].velocity;
 
         std::cout
             << "Particle " << i << '\n'
