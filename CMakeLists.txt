@@ -6,7 +6,9 @@ project(
     LANGUAGES CXX
 )
 
+# ---------------------------------------------------------------------------
 # Options
+# ---------------------------------------------------------------------------
 
 option(
     FASTPHYSICS_ENABLE_SANITIZERS
@@ -14,12 +16,15 @@ option(
     OFF
 )
 
+# ---------------------------------------------------------------------------
 # Core library
+# ---------------------------------------------------------------------------
 
 add_library(
     fastphysics_core
     src/vec3.cpp
     src/gravity.cpp
+    src/integrator.cpp
 )
 
 target_include_directories(
@@ -40,7 +45,9 @@ set_target_properties(
     CXX_EXTENSIONS OFF
 )
 
+# ---------------------------------------------------------------------------
 # Main executable
+# ---------------------------------------------------------------------------
 
 add_executable(
     fastphysics
@@ -59,7 +66,9 @@ set_target_properties(
     CXX_EXTENSIONS OFF
 )
 
+# ---------------------------------------------------------------------------
 # Tests
+# ---------------------------------------------------------------------------
 
 enable_testing()
 
@@ -106,6 +115,11 @@ set_target_properties(
     CXX_EXTENSIONS OFF
 )
 
+add_test(
+    NAME particle_tests
+    COMMAND particle_tests
+)
+
 # Gravity tests
 
 add_executable(
@@ -130,12 +144,33 @@ add_test(
     COMMAND gravity_tests
 )
 
-add_test(
-    NAME particle_tests
-    COMMAND particle_tests
+# Integrator tests
+
+add_executable(
+    integrator_tests
+    tests/integrator_tests.cpp
 )
 
+target_link_libraries(
+    integrator_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    integrator_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME integrator_tests
+    COMMAND integrator_tests
+)
+
+# ---------------------------------------------------------------------------
 # Compiler warnings
+# ---------------------------------------------------------------------------
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(
@@ -171,15 +206,25 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 
     target_compile_options(
-    gravity_tests
-    PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
+        gravity_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        integrator_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
     )
 endif()
 
+# ---------------------------------------------------------------------------
 # Sanitizers
+# ---------------------------------------------------------------------------
 
 if(
     FASTPHYSICS_ENABLE_SANITIZERS
@@ -237,15 +282,28 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    #Gravity tests.
+    # Gravity tests.
     target_compile_options(
-    gravity_tests
-    PRIVATE
-    ${FASTPHYSICS_SANITIZER_FLAGS}
+        gravity_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
     target_link_options(
         gravity_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Integrator tests.
+    target_compile_options(
+        integrator_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        integrator_tests
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
