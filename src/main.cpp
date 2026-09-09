@@ -5,17 +5,22 @@
 #include <cstddef>
 #include <fstream>
 #include <iostream>
-#include <utility>
 
-int main()
+namespace {
+
+bool run_simulation(
+    fastphysics::IntegrationMethod integration_method,
+    const char* output_path
+)
 {
-    constexpr std::size_t number_of_steps = 1000;
-    constexpr std::size_t sample_interval = 10;
+    constexpr std::size_t number_of_steps = 100000;
+    constexpr std::size_t sample_interval = 100;
 
     const fastphysics::SimulationConfig config{
         .gravitational_constant = 1.0,
         .softening = 0.01,
-        .dt = 0.001
+        .dt = 0.001,
+        .integration_method = integration_method
     };
 
     fastphysics::Simulation simulation{
@@ -24,18 +29,21 @@ int main()
     };
 
     std::ofstream output{
-        "results/two_body_euler.csv" // output file stream.
+        output_path
     };
 
     if (!output) {
         std::cerr
-            << "Failed to open output file\n";
+            << "Failed to open output file: "
+            << output_path
+            << '\n';
 
-        return 1;
+        return false;
     }
 
     fastphysics::write_csv_header(output);
 
+    // Store the initial state at t = 0.
     fastphysics::write_csv_snapshot(
         output,
         simulation.time(),
@@ -58,9 +66,47 @@ int main()
     }
 
     std::cout
-        << "FastPhysics - N-body CPU reference\n"
-        << "Simulation time: "
+        << "  Simulation time: "
         << simulation.time()
         << '\n'
-        << "Results: results/two_body_euler.csv\n";
+        << "  Results: "
+        << output_path
+        << "\n\n";
+
+    return true;
+}
+
+}
+
+int main()
+{
+    std::cout
+        << "FastPhysics - Integrator comparison\n\n";
+
+    std::cout
+        << "Euler\n";
+
+    if (!run_simulation(
+            fastphysics::IntegrationMethod::Euler,
+            "results/two_body_euler.csv"
+        )) {
+
+        return 1;
+    }
+
+    std::cout
+        << "Velocity Verlet\n";
+
+    if (!run_simulation(
+            fastphysics::IntegrationMethod::VelocityVerlet,
+            "results/two_body_verlet.csv"
+        )) {
+
+        return 1;
+    }
+
+    std::cout
+        << "Integrator comparison completed.\n";
+
+    return 0;
 }

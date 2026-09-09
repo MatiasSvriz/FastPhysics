@@ -14,29 +14,51 @@ Simulation::Simulation(
     : particles_(std::move(particles)),
       config_(config)
 {
+    // Ensure accelerations correspond to the initial particle positions.
+    update_accelerations();
 }
 
 void Simulation::step()
 {
-    // Gravity dominates the step with O(N^2) work-
-    // Euler integration and the remaining state updates are O(N) or O(1).
-    compute_accelerations(
-        particles_,
-        config_.gravitational_constant,
-        config_.softening
-    );
+    switch (config_.integration_method) {
 
-    euler_step(
-        particles_,
-        config_.dt
-    );
+        case IntegrationMethod::Euler:
+            euler_step(
+                particles_,
+                config_.dt
+            );
+
+            // Keep accelerations synchronized with the new positions.
+            update_accelerations();
+
+            break;
+
+        case IntegrationMethod::VelocityVerlet:
+            // Half kick -> drift -> recompute gravity -> half kick.
+            velocity_verlet_begin_step(
+                particles_,
+                config_.dt
+            );
+
+            // Velocity Verlet needs the acceleration at the new positions
+            // before completing the second half of the velocity update.
+            update_accelerations();
+
+            velocity_verlet_end_step(
+                particles_,
+                config_.dt
+            );
+
+            break;
+    }
 
     time_ += config_.dt;
 }
 
 void Simulation::run(std::size_t number_of_steps)
 {
-    // Running S steps with the direct gravity solver costs O(S * N^2).
+    // With the direct O(N^2) gravity solver, S simulation steps
+    // require O(S * N^2) time.
     for (std::size_t step_index = 0;
          step_index < number_of_steps;
          ++step_index) {
@@ -53,6 +75,15 @@ const std::vector<Particle>& Simulation::particles() const
 double Simulation::time() const
 {
     return time_;
+}
+
+void Simulation::update_accelerations()
+{
+    compute_accelerations(
+        particles_,
+        config_.gravitational_constant,
+        config_.softening
+    );
 }
 
 }
