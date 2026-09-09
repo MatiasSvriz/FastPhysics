@@ -26,6 +26,8 @@ add_library(
     src/gravity.cpp
     src/integrator.cpp
     src/simulation.cpp
+    src/scenarios.cpp
+    src/csv_writer.cpp
 )
 
 target_include_directories(
@@ -193,6 +195,54 @@ add_test(
     COMMAND simulation_tests
 )
 
+# Scenario tests
+
+add_executable(
+    scenario_tests
+    tests/scenario_tests.cpp
+)
+
+target_link_libraries(
+    scenario_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    scenario_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME scenario_tests
+    COMMAND scenario_tests
+)
+
+# CSV writer tests
+
+add_executable(
+    csv_writer_tests
+    tests/csv_writer_tests.cpp
+)
+
+target_link_libraries(
+    csv_writer_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    csv_writer_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME csv_writer_tests
+    COMMAND csv_writer_tests
+)
+
 # ---------------------------------------------------------------------------
 # Compiler warnings
 # ---------------------------------------------------------------------------
@@ -248,6 +298,22 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
     target_compile_options(
         simulation_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        scenario_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        csv_writer_tests
         PRIVATE
         -Wall
         -Wextra
@@ -350,6 +416,32 @@ if(
 
     target_link_options(
         simulation_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Scenario tests.
+    target_compile_options(
+        scenario_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        scenario_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # CSV writer tests.
+    target_compile_options(
+        csv_writer_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        csv_writer_tests
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )

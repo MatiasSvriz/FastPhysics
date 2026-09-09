@@ -9,3 +9,6 @@ build/
 
 # Editor / OS
 .DS_Store
+
+# Simulation results
+results/*

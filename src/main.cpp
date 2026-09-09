@@ -1,27 +1,16 @@
-#include "fastphysics/particle.hpp"
+#include "fastphysics/csv_writer.hpp"
+#include "fastphysics/scenarios.hpp"
 #include "fastphysics/simulation.hpp"
 
 #include <cstddef>
+#include <fstream>
 #include <iostream>
 #include <utility>
-#include <vector>
 
 int main()
 {
-    std::vector<fastphysics::Particle> particles{
-        {
-            {-1.0, 0.0, 0.0},
-            {0.0, -0.5, 0.0},
-            {},
-            1.0
-        },
-        {
-            {1.0, 0.0, 0.0},
-            {0.0, 0.5, 0.0},
-            {},
-            1.0
-        }
-    };
+    constexpr std::size_t number_of_steps = 1000;
+    constexpr std::size_t sample_interval = 10;
 
     const fastphysics::SimulationConfig config{
         .gravitational_constant = 1.0,
@@ -30,35 +19,48 @@ int main()
     };
 
     fastphysics::Simulation simulation{
-        std::move(particles),
+        fastphysics::make_two_body_system(),
         config
     };
 
-    constexpr std::size_t number_of_steps = 1000;
+    std::ofstream output{
+        "results/two_body_euler.csv" // output file stream.
+    };
 
-    simulation.run(number_of_steps);
+    if (!output) {
+        std::cerr
+            << "Failed to open output file\n";
+
+        return 1;
+    }
+
+    fastphysics::write_csv_header(output);
+
+    fastphysics::write_csv_snapshot(
+        output,
+        simulation.time(),
+        simulation.particles()
+    );
+
+    for (std::size_t step = 1;
+         step <= number_of_steps;
+         ++step) {
+
+        simulation.step();
+
+        if (step % sample_interval == 0) {
+            fastphysics::write_csv_snapshot(
+                output,
+                simulation.time(),
+                simulation.particles()
+            );
+        }
+    }
 
     std::cout
         << "FastPhysics - N-body CPU reference\n"
         << "Simulation time: "
         << simulation.time()
-        << "\n\n";
-
-    const auto& final_particles = simulation.particles();
-
-    for (std::size_t i = 0; i < final_particles.size(); ++i) {
-        const auto& position = final_particles[i].position;
-        const auto& velocity = final_particles[i].velocity;
-
-        std::cout
-            << "Particle " << i << '\n'
-            << "  position: ("
-            << position.x << ", "
-            << position.y << ", "
-            << position.z << ")\n"
-            << "  velocity: ("
-            << velocity.x << ", "
-            << velocity.y << ", "
-            << velocity.z << ")\n";
-    }
+        << '\n'
+        << "Results: results/two_body_euler.csv\n";
 }
