@@ -1,25 +1,38 @@
-#include "fastphysics/csv_writer.hpp"
+#include "fastphysics/convergence.hpp"
+#include "fastphysics/energy.hpp"
 #include "fastphysics/scenarios.hpp"
 #include "fastphysics/simulation.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 
 namespace {
 
-bool run_simulation(
+struct SimulationResult {
+    std::size_t number_of_steps{};
+    double final_relative_energy_error{};
+    double maximum_relative_energy_error{};
+};
+
+SimulationResult run_experiment(
     fastphysics::IntegrationMethod integration_method,
-    const char* output_path
+    double dt,
+    double final_time
 )
 {
-    constexpr std::size_t number_of_steps = 100000;
-    constexpr std::size_t sample_interval = 100;
+    const auto number_of_steps =
+        static_cast<std::size_t>(
+            std::llround(final_time / dt)
+        );
 
     const fastphysics::SimulationConfig config{
         .gravitational_constant = 1.0,
         .softening = 0.01,
-        .dt = 0.001,
+        .dt = dt,
         .integration_method = integration_method
     };
 
@@ -28,85 +41,201 @@ bool run_simulation(
         config
     };
 
-    std::ofstream output{
-        output_path
-    };
+    const double initial_energy =
+        fastphysics::total_energy(
+            simulation.particles(),
+            config.gravitational_constant,
+            config.softening
+        );
 
-    if (!output) {
-        std::cerr
-            << "Failed to open output file: "
-            << output_path
-            << '\n';
+    double maximum_relative_energy_error = 0.0;
+    double final_relative_energy_error = 0.0;
 
-        return false;
-    }
-
-    fastphysics::write_csv_header(output);
-
-    // Store the initial state at t = 0.
-    fastphysics::write_csv_snapshot(
-        output,
-        simulation.time(),
-        simulation.particles()
-    );
-
-    for (std::size_t step = 1;
-         step <= number_of_steps;
+    for (std::size_t step = 0;
+         step < number_of_steps;
          ++step) {
 
         simulation.step();
 
-        if (step % sample_interval == 0) {
-            fastphysics::write_csv_snapshot(
-                output,
-                simulation.time(),
-                simulation.particles()
+        const double current_energy =
+            fastphysics::total_energy(
+                simulation.particles(),
+                config.gravitational_constant,
+                config.softening
             );
+
+        final_relative_energy_error =
+            fastphysics::relative_error(
+                current_energy,
+                initial_energy
+            );
+
+        maximum_relative_energy_error =
+            std::max(
+                maximum_relative_energy_error,
+                std::abs(final_relative_energy_error)
+            );
+    }
+
+    return {
+        number_of_steps,
+        final_relative_energy_error,
+        maximum_relative_energy_error
+    };
+}
+
+void run_convergence_study(
+    const char* name,
+    fastphysics::IntegrationMethod integration_method,
+    int theoretical_order,
+    std::ofstream& output
+)
+{
+    constexpr double final_time = 100.0;
+
+    constexpr double time_steps[]{
+        0.1,
+        0.05,
+        0.025,
+        0.0125,
+        0.00625,
+        0.003125,
+        0.0015625,
+        0.00078125
+    };
+
+    std::cout
+        << name
+        << "  [theoretical order: "
+        << theoretical_order
+        << "]\n";
+
+    std::cout
+        << std::left
+        << std::setw(12) << "dt"
+        << std::setw(12) << "steps"
+        << std::setw(18) << "final error"
+        << std::setw(18) << "max error"
+        << "observed p\n";
+
+    std::cout
+        << "-------------------------------------------------------------\n";
+
+    double previous_dt = 0.0;
+    double previous_error = 0.0;
+    bool has_previous_result = false;
+
+    for (const double dt : time_steps) {
+
+        const SimulationResult result =
+            run_experiment(
+                integration_method,
+                dt,
+                final_time
+            );
+
+        std::cout
+            << std::scientific
+            << std::setprecision(4)
+            << std::left
+            << std::setw(12) << dt
+            << std::setw(12) << result.number_of_steps
+            << std::setw(18)
+            << result.final_relative_energy_error
+            << std::setw(18)
+            << result.maximum_relative_energy_error;
+
+        output
+            << name << ','
+            << dt << ','
+            << result.number_of_steps << ','
+            << result.final_relative_energy_error << ','
+            << result.maximum_relative_energy_error << ',';
+
+        if (has_previous_result) {
+            const double observed_order =
+                fastphysics::estimate_convergence_order(
+                    previous_dt,
+                    previous_error,
+                    dt,
+                    result.maximum_relative_energy_error
+                );
+
+            std::cout
+                << std::fixed
+                << std::setprecision(3)
+                << observed_order;
+
+            output
+                << observed_order;
+        } else {
+            std::cout << '-';
         }
+
+        std::cout << '\n';
+        output << '\n';
+
+        previous_dt = dt;
+        previous_error =
+            result.maximum_relative_energy_error;
+
+        has_previous_result = true;
     }
 
     std::cout
-        << "  Simulation time: "
-        << simulation.time()
-        << '\n'
-        << "  Results: "
-        << output_path
-        << "\n\n";
-
-    return true;
+        << "\n"
+        << "Note: observed p is estimated from maximum relative energy error.\n"
+        << "It is a numerical diagnostic and does not necessarily equal the\n"
+        << "formal convergence order for every tested time step.\n\n";
 }
 
 }
 
 int main()
 {
-    std::cout
-        << "FastPhysics - Integrator comparison\n\n";
+    std::ofstream output{
+        "results/convergence.csv"
+    };
 
-    std::cout
-        << "Euler\n";
-
-    if (!run_simulation(
-            fastphysics::IntegrationMethod::Euler,
-            "results/two_body_euler.csv"
-        )) {
+    if (!output) {
+        std::cerr
+            << "Failed to open results/convergence.csv\n";
 
         return 1;
     }
 
-    std::cout
-        << "Velocity Verlet\n";
-
-    if (!run_simulation(
-            fastphysics::IntegrationMethod::VelocityVerlet,
-            "results/two_body_verlet.csv"
-        )) {
-
-        return 1;
-    }
+    output
+        << "integrator,dt,steps,final_error,max_error,observed_order\n";
 
     std::cout
-        << "Integrator comparison completed.\n";
+        << "\n"
+        << "=============================================================\n"
+        << " FastPhysics - N-body Time Step Convergence Study\n"
+        << "=============================================================\n\n"
+        << "Scenario    : symmetric two-body gravitational orbit\n"
+        << "Final time  : 100 normalized time units\n"
+        << "Diagnostic  : relative total-energy error\n"
+        << "Refinement  : dt -> dt / 2\n\n";
+
+    run_convergence_study(
+        "Euler",
+        fastphysics::IntegrationMethod::Euler,
+        1,
+        output
+    );
+
+    run_convergence_study(
+        "Velocity Verlet",
+        fastphysics::IntegrationMethod::VelocityVerlet,
+        2,
+        output
+    );
+
+    std::cout
+        << "=============================================================\n"
+        << " Study completed\n"
+        << " Results: results/convergence.csv\n"
+        << "=============================================================\n\n";
 
     return 0;
 }

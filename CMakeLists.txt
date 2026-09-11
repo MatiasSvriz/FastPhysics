@@ -28,6 +28,8 @@ add_library(
     src/simulation.cpp
     src/scenarios.cpp
     src/csv_writer.cpp
+    src/energy.cpp
+    src/convergence.cpp
 )
 
 target_include_directories(
@@ -243,6 +245,54 @@ add_test(
     COMMAND csv_writer_tests
 )
 
+# Energy tests
+
+add_executable(
+    energy_tests
+    tests/energy_tests.cpp
+)
+
+target_link_libraries(
+    energy_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    energy_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME energy_tests
+    COMMAND energy_tests
+)
+
+# Convergence tests
+
+add_executable(
+    convergence_tests
+    tests/convergence_tests.cpp
+)
+
+target_link_libraries(
+    convergence_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    convergence_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME convergence_tests
+    COMMAND convergence_tests
+)
+
 # ---------------------------------------------------------------------------
 # Compiler warnings
 # ---------------------------------------------------------------------------
@@ -314,6 +364,22 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
     target_compile_options(
         csv_writer_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        energy_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        convergence_tests
         PRIVATE
         -Wall
         -Wextra
@@ -442,6 +508,32 @@ if(
 
     target_link_options(
         csv_writer_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Energy tests.
+    target_compile_options(
+        energy_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        energy_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Convergence tests.
+    target_compile_options(
+        convergence_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        convergence_tests
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
