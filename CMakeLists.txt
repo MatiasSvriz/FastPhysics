@@ -72,6 +72,27 @@ set_target_properties(
 )
 
 # ---------------------------------------------------------------------------
+# Benchmarks
+# ---------------------------------------------------------------------------
+
+add_executable(
+    gravity_benchmark
+    benchmarks/gravity_benchmark.cpp
+)
+
+target_link_libraries(
+    gravity_benchmark
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    gravity_benchmark
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
@@ -315,6 +336,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 
     target_compile_options(
+        gravity_benchmark
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
         fastphysics_tests
         PRIVATE
         -Wall
@@ -417,6 +446,22 @@ if(
 
     target_link_options(
         fastphysics
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Benchmark executable.
+    #
+    # Sanitizer support is included so the sanitizer build remains valid.
+    # Performance measurements must still be made with a Release build without sanitizers.
+    target_compile_options(
+        gravity_benchmark
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        gravity_benchmark
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
