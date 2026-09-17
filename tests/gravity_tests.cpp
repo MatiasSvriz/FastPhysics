@@ -133,12 +133,141 @@ void test_pairwise_matches_reference_solver()
     }
 }
 
+void test_soa_matches_reference_solver()
+{
+    std::vector<fastphysics::Particle> particles{
+        {
+            {0.0, 0.0, 0.0},
+            {},
+            {},
+            2.0
+        },
+        {
+            {2.0, 1.0, 0.0},
+            {},
+            {},
+            3.0
+        },
+        {
+            {-1.0, 3.0, 2.0},
+            {},
+            {},
+            4.0
+        }
+    };
+
+    auto soa_particles =
+        fastphysics::make_particle_system_soa(
+            particles
+        );
+
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
+
+    fastphysics::compute_accelerations(
+        particles,
+        gravitational_constant,
+        softening
+    );
+
+    fastphysics::compute_accelerations_soa(
+        soa_particles,
+        gravitational_constant,
+        softening
+    );
+
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+
+        assert(almost_equal(
+            particles[i].acceleration.x,
+            soa_particles.acceleration_x[i]
+        ));
+
+        assert(almost_equal(
+            particles[i].acceleration.y,
+            soa_particles.acceleration_y[i]
+        ));
+
+        assert(almost_equal(
+            particles[i].acceleration.z,
+            soa_particles.acceleration_z[i]
+        ));
+    }
+}
+
+void test_pairwise_soa_matches_reference_solver()
+{
+    std::vector<fastphysics::Particle> particles{
+        {
+            {0.0, 0.0, 0.0},
+            {},
+            {},
+            2.0
+        },
+        {
+            {2.0, 1.0, 0.0},
+            {},
+            {},
+            3.0
+        },
+        {
+            {-1.0, 3.0, 2.0},
+            {},
+            {},
+            4.0
+        }
+    };
+
+    auto pairwise_soa_particles =
+        fastphysics::make_particle_system_soa(
+            particles
+        );
+
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
+
+    // Use the original AoS solver as the correctness reference.
+    fastphysics::compute_accelerations(
+        particles,
+        gravitational_constant,
+        softening
+    );
+
+    fastphysics::compute_accelerations_pairwise_soa(
+        pairwise_soa_particles,
+        gravitational_constant,
+        softening
+    );
+
+    // The order of floating-point operations is different, so compare
+    // using a tolerance instead of exact equality.
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+
+        assert(almost_equal(
+            particles[i].acceleration.x,
+            pairwise_soa_particles.acceleration_x[i]
+        ));
+
+        assert(almost_equal(
+            particles[i].acceleration.y,
+            pairwise_soa_particles.acceleration_y[i]
+        ));
+
+        assert(almost_equal(
+            particles[i].acceleration.z,
+            pairwise_soa_particles.acceleration_z[i]
+        ));
+    }
+}
+
 }
 
 int main()
 {
     test_two_body_reference_solver();
     test_pairwise_matches_reference_solver();
+    test_soa_matches_reference_solver();
+    test_pairwise_soa_matches_reference_solver();
 
     return 0;
 }

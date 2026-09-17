@@ -1,4 +1,5 @@
 #include "fastphysics/gravity.hpp"
+#include "fastphysics/particle_system_soa.hpp"
 #include "fastphysics/scenarios.hpp"
 
 #include <array>
@@ -15,51 +16,23 @@ struct BenchmarkResult {
     double average_time_ms{};
 };
 
-// Both gravity solvers use the same arguments.
-// This lets us pass either implementation to the same benchmark function.
-using GravitySolver = void (*)(
-    std::vector<fastphysics::Particle>&,
-    double,
-    double
-);
-
-struct Solver {
-    const char* name;
-    GravitySolver function;
-};
-
-// Both direct N-body solvers are O(N^2).
-
-// Reference solver:
-//     N * (N - 1) interactions
-
-// Pairwise solver:
-//     N * (N - 1) / 2 unique pairs
-
-// The pairwise solver does about half as many pair evaluations, but both
-// still grow with N^2. Dividing the work by two changes the constant factor,
-// not the overall complexity.
-
-// If T(N) ~ C * N^2
-// then doubling N gives T(2N) ~ C * (2N)^2 ~ 4 * T(N)
-// So both solvers should approach a 4x slowdown when N doubles.
-// The pairwise solver should simply have a smaller constant C.
-BenchmarkResult benchmark_gravity(
-    GravitySolver solver,
+// AoS and SoA benchmarks use different particle types, so we keep two small
+// timing functions instead of forcing both layouts through the same interface.
+//
+// This keeps the benchmark simple and makes it clear what is actually being
+// measured in each case.
+BenchmarkResult benchmark_reference_aos(
     const std::vector<fastphysics::Particle>& initial_particles,
     std::size_t repetitions
 )
 {
-    // Give each solver its own copy of the same system.
-    // The copy happens outside the timed section.
     auto particles = initial_particles;
 
     constexpr double gravitational_constant = 1.0;
     constexpr double softening = 0.01;
 
-    // Run once before measuring to reduce first-run effects such as cold
-    // caches or other startup overhead.
-    solver(
+    // Warm-up run to reduce first-run effects.
+    fastphysics::compute_accelerations(
         particles,
         gravitational_constant,
         softening
@@ -72,12 +45,10 @@ BenchmarkResult benchmark_gravity(
          repetition < repetitions;
          ++repetition) {
 
-        // steady_clock is monotonic, so it is suitable for measuring
-        // elapsed time.
         const auto start =
             std::chrono::steady_clock::now();
 
-        solver(
+        fastphysics::compute_accelerations(
             particles,
             gravitational_constant,
             softening
@@ -93,36 +64,192 @@ BenchmarkResult benchmark_gravity(
 
         total_time_ms += elapsed_ms;
 
-        // Start with the first result, then keep the fastest run.
         if (repetition == 0 || elapsed_ms < best_time_ms) {
             best_time_ms = elapsed_ms;
         }
     }
 
-    const double average_time_ms =
-        total_time_ms
-        / static_cast<double>(repetitions);
-
     return {
         best_time_ms,
-        average_time_ms
+        total_time_ms / static_cast<double>(repetitions)
     };
 }
 
-// We double the number of particles between measurements.
-// This lets us estimate how fast runtime grows with N.
+BenchmarkResult benchmark_pairwise_aos(
+    const std::vector<fastphysics::Particle>& initial_particles,
+    std::size_t repetitions
+)
+{
+    auto particles = initial_particles;
 
-// If T(N) ~ N^p
-// then doubling N gives T(2N) / T(N) ~ 2^p
-// We will call this ratio the slowdown, so slowdown ~ 2^p
-// So p = log2(slowdown)
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
 
-// For example, 
-// - slowdown ~ 2x -> p ~ 1 -> O(N)
-// - slowdown ~ 4x -> p ~ 2 -> O(N^2)
-// - slowdown ~ 8x -> p ~ 3 -> O(N^3)
+    fastphysics::compute_accelerations_pairwise(
+        particles,
+        gravitational_constant,
+        softening
+    );
 
-// Our gravity solvers are O(N^2), so we expect p to get close to 2.
+    double total_time_ms = 0.0;
+    double best_time_ms = 0.0;
+
+    for (std::size_t repetition = 0;
+         repetition < repetitions;
+         ++repetition) {
+
+        const auto start =
+            std::chrono::steady_clock::now();
+
+        fastphysics::compute_accelerations_pairwise(
+            particles,
+            gravitational_constant,
+            softening
+        );
+
+        const auto end =
+            std::chrono::steady_clock::now();
+
+        const double elapsed_ms =
+            std::chrono::duration<double, std::milli>(
+                end - start
+            ).count();
+
+        total_time_ms += elapsed_ms;
+
+        if (repetition == 0 || elapsed_ms < best_time_ms) {
+            best_time_ms = elapsed_ms;
+        }
+    }
+
+    return {
+        best_time_ms,
+        total_time_ms / static_cast<double>(repetitions)
+    };
+}
+
+BenchmarkResult benchmark_reference_soa(
+    const fastphysics::ParticleSystemSoA& initial_particles,
+    std::size_t repetitions
+)
+{
+    auto particles = initial_particles;
+
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
+
+    fastphysics::compute_accelerations_soa(
+        particles,
+        gravitational_constant,
+        softening
+    );
+
+    double total_time_ms = 0.0;
+    double best_time_ms = 0.0;
+
+    for (std::size_t repetition = 0;
+         repetition < repetitions;
+         ++repetition) {
+
+        const auto start =
+            std::chrono::steady_clock::now();
+
+        fastphysics::compute_accelerations_soa(
+            particles,
+            gravitational_constant,
+            softening
+        );
+
+        const auto end =
+            std::chrono::steady_clock::now();
+
+        const double elapsed_ms =
+            std::chrono::duration<double, std::milli>(
+                end - start
+            ).count();
+
+        total_time_ms += elapsed_ms;
+
+        if (repetition == 0 || elapsed_ms < best_time_ms) {
+            best_time_ms = elapsed_ms;
+        }
+    }
+
+    return {
+        best_time_ms,
+        total_time_ms / static_cast<double>(repetitions)
+    };
+}
+
+BenchmarkResult benchmark_pairwise_soa(
+    const fastphysics::ParticleSystemSoA& initial_particles,
+    std::size_t repetitions
+)
+{
+    auto particles = initial_particles;
+
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
+
+    fastphysics::compute_accelerations_pairwise_soa(
+        particles,
+        gravitational_constant,
+        softening
+    );
+
+    double total_time_ms = 0.0;
+    double best_time_ms = 0.0;
+
+    for (std::size_t repetition = 0;
+         repetition < repetitions;
+         ++repetition) {
+
+        const auto start =
+            std::chrono::steady_clock::now();
+
+        fastphysics::compute_accelerations_pairwise_soa(
+            particles,
+            gravitational_constant,
+            softening
+        );
+
+        const auto end =
+            std::chrono::steady_clock::now();
+
+        const double elapsed_ms =
+            std::chrono::duration<double, std::milli>(
+                end - start
+            ).count();
+
+        total_time_ms += elapsed_ms;
+
+        if (repetition == 0 || elapsed_ms < best_time_ms) {
+            best_time_ms = elapsed_ms;
+        }
+    }
+
+    return {
+        best_time_ms,
+        total_time_ms / static_cast<double>(repetitions)
+    };
+}
+
+// We double N between measurements.
+//
+// If:
+//
+//     T(N) ~ N^p
+//
+// then:
+//
+//     T(2N) / T(N) ~ 2^p
+//
+// so:
+//
+//     p = log2(slowdown)
+//
+// A direct N-body solver should stay close to p = 2 even when constant
+// factors change because of pairwise evaluation or memory layout.
 double calculate_scaling_exponent(
     double slowdown
 )
@@ -130,19 +257,14 @@ double calculate_scaling_exponent(
     return std::log2(slowdown);
 }
 
-// Print the timing for one solver.
-
-// previous_average_ms is the result for the previous particle count.
-// Since N doubles each time, we can use both values to calculate the
-// slowdown and estimate the scaling exponent.
 void print_result(
-    const char* solver_name,
+    const char* name,
     const BenchmarkResult& result,
     double previous_average_ms
 )
 {
     std::cout
-        << "  " << solver_name << '\n'
+        << "  " << name << '\n'
         << "    best      : "
         << result.best_time_ms
         << " ms\n"
@@ -150,10 +272,8 @@ void print_result(
         << result.average_time_ms
         << " ms\n";
 
-    // The first measurement has no previous result to compare with.
     if (previous_average_ms > 0.0) {
 
-        // Since N doubles, an O(N^2) solver should approach a 4x slowdown.
         const double slowdown =
             result.average_time_ms
             / previous_average_ms;
@@ -179,113 +299,157 @@ void print_result(
 
 int main()
 {
-    // Double N each time so we can study how runtime scales.
-    constexpr std::array<std::size_t, 6> particle_counts{
-        100,
-        200,
+    constexpr std::array<std::size_t, 5> particle_counts{
         400,
         800,
         1600,
-        3200
+        3200,
+        6400
     };
 
     constexpr std::size_t repetitions = 10;
 
-    // The benchmark does not care which implementation it receives.
-    // New gravity solvers can be added here later.
-    constexpr std::array<Solver, 2> solvers{{
-        {
-            "Reference solver",
-            fastphysics::compute_accelerations
-        },
-        {
-            "Pairwise solver",
-            fastphysics::compute_accelerations_pairwise
-        }
-    }};
-
     std::cout
         << "\n"
         << "============================================================\n"
-        << " FastPhysics - Gravity Solver Benchmark\n"
+        << " FastPhysics - Gravity Optimization Benchmark\n"
         << "============================================================\n\n"
         << "Repetitions : "
         << repetitions
-        << '\n'
-        << "Expected    : O(N^2)\n\n"
-        << "Reference solver evaluates N * (N - 1) ordered interactions.\n"
-        << "Pairwise solver evaluates N * (N - 1) / 2 unique pairs.\n\n"
-        << "Both remain O(N^2), but pairwise should reduce runtime.\n"
-        << "When N doubles, both should approach a 4x slowdown.\n\n";
+        << "\n\n"
+        << "Reference AoS : N * (N - 1) interactions\n"
+        << "Reference SoA : N * (N - 1) interactions\n"
+        << "Pairwise AoS  : N * (N - 1) / 2 pairs\n"
+        << "Pairwise SoA  : N * (N - 1) / 2 pairs\n\n"
+        << "All implementations remain O(N^2).\n\n";
 
-    // Store the previous average separately for each solver.
-    std::array<double, solvers.size()> previous_average_ms{};
+    double previous_reference_aos = 0.0;
+    double previous_reference_soa = 0.0;
+    double previous_pairwise_aos = 0.0;
+    double previous_pairwise_soa = 0.0;
 
     for (const auto particle_count : particle_counts) {
 
-        // Create the system once so every solver starts from the same data.
-        const auto initial_particles =
+        // Generate one physical system and derive the SoA version from it.
+        // This keeps all four benchmarks based on exactly the same data.
+        const auto aos_particles =
             fastphysics::make_benchmark_system(
                 particle_count
             );
 
-        std::array<BenchmarkResult, solvers.size()> results{};
+        const auto soa_particles =
+            fastphysics::make_particle_system_soa(
+                aos_particles
+            );
+
+        const BenchmarkResult reference_aos =
+            benchmark_reference_aos(
+                aos_particles,
+                repetitions
+            );
+
+        const BenchmarkResult reference_soa =
+            benchmark_reference_soa(
+                soa_particles,
+                repetitions
+            );
+
+        const BenchmarkResult pairwise_aos =
+            benchmark_pairwise_aos(
+                aos_particles,
+                repetitions
+            );
+
+        const BenchmarkResult pairwise_soa =
+            benchmark_pairwise_soa(
+                soa_particles,
+                repetitions
+            );
 
         std::cout
             << "N = "
             << particle_count
             << "\n\n";
 
-        // Run every solver using the same benchmark code.
-        for (std::size_t i = 0;
-             i < solvers.size();
-             ++i) {
+        print_result(
+            "Reference AoS",
+            reference_aos,
+            previous_reference_aos
+        );
 
-            results[i] =
-                benchmark_gravity(
-                    solvers[i].function,
-                    initial_particles,
-                    repetitions
-                );
+        print_result(
+            "Reference SoA",
+            reference_soa,
+            previous_reference_soa
+        );
 
-            print_result(
-                solvers[i].name,
-                results[i],
-                previous_average_ms[i]
-            );
+        print_result(
+            "Pairwise AoS",
+            pairwise_aos,
+            previous_pairwise_aos
+        );
 
-            previous_average_ms[i] =
-                results[i].average_time_ms;
-        }
+        print_result(
+            "Pairwise SoA",
+            pairwise_soa,
+            previous_pairwise_soa
+        );
 
-        // Compare the original solver against the pairwise version.
-        // speedup = reference time / pairwise time
-        // A value above 1 means pairwise is faster.
-        // For example, 
-        // - 10 ms / 6 ms = 1.67x speedup
-        const double best_speedup =
-            results[0].best_time_ms
-            / results[1].best_time_ms;
+        // Effect of changing only the memory layout on the reference solver.
+        const double soa_speedup =
+            reference_aos.average_time_ms
+            / reference_soa.average_time_ms;
 
-        const double average_speedup =
-            results[0].average_time_ms
-            / results[1].average_time_ms;
+        // Effect of pairwise evaluation while keeping AoS.
+        const double pairwise_speedup =
+            reference_aos.average_time_ms
+            / pairwise_aos.average_time_ms;
+
+        // Effect of pairwise evaluation while keeping SoA.
+        const double pairwise_on_soa_speedup =
+            reference_soa.average_time_ms
+            / pairwise_soa.average_time_ms;
+
+        // Effect of changing to SoA after pairwise optimization.
+        const double soa_on_pairwise_speedup =
+            pairwise_aos.average_time_ms
+            / pairwise_soa.average_time_ms;
+
+        // Total improvement relative to the original Reference AoS solver.
+        const double combined_speedup =
+            reference_aos.average_time_ms
+            / pairwise_soa.average_time_ms;
 
         std::cout
-            << "  Pairwise speedup\n"
-            << "    best      : "
-            << best_speedup
+            << "  Speedups\n"
+            << "    SoA on reference      : "
+            << soa_speedup
             << "x\n"
-            << "    average   : "
-            << average_speedup
+            << "    Pairwise on AoS       : "
+            << pairwise_speedup
+            << "x\n"
+            << "    Pairwise on SoA       : "
+            << pairwise_on_soa_speedup
+            << "x\n"
+            << "    SoA on pairwise       : "
+            << soa_on_pairwise_speedup
+            << "x\n"
+            << "    Combined vs original  : "
+            << combined_speedup
             << "x\n\n";
-    }
 
-    std::cout
-        << "Expected behaviour:\n"
-        << "  scaling slowdown -> about 4x\n"
-        << "  scaling p        -> about 2\n"
-        << "  pairwise speedup -> greater than 1x\n\n";
+        previous_reference_aos =
+            reference_aos.average_time_ms;
+
+        previous_reference_soa =
+            reference_soa.average_time_ms;
+
+        previous_pairwise_aos =
+            pairwise_aos.average_time_ms;
+
+        previous_pairwise_soa =
+            pairwise_soa.average_time_ms;
+    }
 
     return 0;
 }

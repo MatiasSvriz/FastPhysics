@@ -16,6 +16,18 @@ option(
     OFF
 )
 
+option(
+    FASTPHYSICS_ENABLE_NATIVE_OPTIMIZATIONS
+    "Enable CPU-specific optimizations using -march=native"
+    OFF
+)
+
+option(
+    FASTPHYSICS_ENABLE_VECTORIZATION_REPORT
+    "Enable compiler vectorization diagnostics"
+    OFF
+)
+
 # ---------------------------------------------------------------------------
 # Core library
 # ---------------------------------------------------------------------------
@@ -30,6 +42,7 @@ add_library(
     src/csv_writer.cpp
     src/energy.cpp
     src/convergence.cpp
+    src/particle_system_soa.cpp
 )
 
 target_include_directories(
@@ -92,6 +105,23 @@ set_target_properties(
     CXX_EXTENSIONS OFF
 )
 
+add_executable(
+    memory_layout
+    benchmarks/memory_layout.cpp
+)
+
+target_link_libraries(
+    memory_layout
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    memory_layout
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -144,6 +174,30 @@ set_target_properties(
 add_test(
     NAME particle_tests
     COMMAND particle_tests
+)
+
+# Particle System SoA tests
+
+add_executable(
+    particle_system_soa_tests
+    tests/particle_system_soa_tests.cpp
+)
+
+target_link_libraries(
+    particle_system_soa_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    particle_system_soa_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME particle_system_soa_tests
+    COMMAND particle_system_soa_tests
 )
 
 # Gravity tests
@@ -319,6 +373,7 @@ add_test(
 # ---------------------------------------------------------------------------
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+
     target_compile_options(
         fastphysics_core
         PRIVATE
@@ -344,6 +399,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 
     target_compile_options(
+        memory_layout
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
         fastphysics_tests
         PRIVATE
         -Wall
@@ -353,6 +416,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
     target_compile_options(
         particle_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        particle_system_soa_tests
         PRIVATE
         -Wall
         -Wextra
@@ -414,6 +485,59 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wextra
         -Wpedantic
     )
+
+endif()
+
+# ---------------------------------------------------------------------------
+# Native CPU optimizations
+# ---------------------------------------------------------------------------
+
+if(
+    FASTPHYSICS_ENABLE_NATIVE_OPTIMIZATIONS
+    AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+)
+
+    target_compile_options(
+        fastphysics_core
+        PRIVATE
+        -march=native
+    )
+
+    target_compile_options(
+        gravity_benchmark
+        PRIVATE
+        -march=native
+    )
+
+endif()
+
+# ---------------------------------------------------------------------------
+# Vectorization reports
+# ---------------------------------------------------------------------------
+
+if(FASTPHYSICS_ENABLE_VECTORIZATION_REPORT)
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+
+        target_compile_options(
+            fastphysics_core
+            PRIVATE
+            -fopt-info-vec
+            -fopt-info-vec-missed
+        )
+
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+
+        target_compile_options(
+            fastphysics_core
+            PRIVATE
+            -Rpass=loop-vectorize
+            -Rpass-missed=loop-vectorize
+            -Rpass-analysis=loop-vectorize
+        )
+
+    endif()
+
 endif()
 
 # ---------------------------------------------------------------------------
@@ -424,20 +548,23 @@ if(
     FASTPHYSICS_ENABLE_SANITIZERS
     AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
 )
+
     set(
         FASTPHYSICS_SANITIZER_FLAGS
         -fsanitize=address,undefined
         -fno-omit-frame-pointer
     )
 
-    # Instrument the core library during compilation.
+    # Core library
+
     target_compile_options(
         fastphysics_core
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Main executable.
+    # Main executable
+
     target_compile_options(
         fastphysics
         PRIVATE
@@ -450,10 +577,8 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Benchmark executable.
-    #
-    # Sanitizer support is included so the sanitizer build remains valid.
-    # Performance measurements must still be made with a Release build without sanitizers.
+    # Gravity benchmark
+
     target_compile_options(
         gravity_benchmark
         PRIVATE
@@ -466,7 +591,22 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Vec3 tests.
+    # Memory layout tool
+
+    target_compile_options(
+        memory_layout
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        memory_layout
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Vec3 tests
+
     target_compile_options(
         fastphysics_tests
         PRIVATE
@@ -479,7 +619,8 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Particle tests.
+    # Particle tests
+
     target_compile_options(
         particle_tests
         PRIVATE
@@ -492,7 +633,22 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Gravity tests.
+    # Particle System SoA tests
+
+    target_compile_options(
+        particle_system_soa_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        particle_system_soa_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Gravity tests
+
     target_compile_options(
         gravity_tests
         PRIVATE
@@ -505,7 +661,8 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Integrator tests.
+    # Integrator tests
+
     target_compile_options(
         integrator_tests
         PRIVATE
@@ -518,7 +675,8 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Simulation tests.
+    # Simulation tests
+
     target_compile_options(
         simulation_tests
         PRIVATE
@@ -531,7 +689,8 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Scenario tests.
+    # Scenario tests
+
     target_compile_options(
         scenario_tests
         PRIVATE
@@ -544,7 +703,8 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # CSV writer tests.
+    # CSV writer tests
+
     target_compile_options(
         csv_writer_tests
         PRIVATE
@@ -557,7 +717,8 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Energy tests.
+    # Energy tests
+
     target_compile_options(
         energy_tests
         PRIVATE
@@ -570,7 +731,8 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Convergence tests.
+    # Convergence tests
+
     target_compile_options(
         convergence_tests
         PRIVATE
@@ -582,4 +744,5 @@ if(
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
+
 endif()

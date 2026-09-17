@@ -132,4 +132,159 @@ void compute_accelerations_pairwise(
     }
 }
 
+void compute_accelerations_soa(
+    ParticleSystemSoA& particles,
+    double gravitational_constant,
+    double softening
+)
+{
+    // Accelerations are recalculated from scratch every time.
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        particles.acceleration_x[i] = 0.0;
+        particles.acceleration_y[i] = 0.0;
+        particles.acceleration_z[i] = 0.0;
+    }
+
+    // Softening is constant, so calculate its square once outside the loop.
+    const double softening_squared = softening * softening;
+
+    // This is intentionally the same O(N^2) algorithm as the reference AoS
+    // solver. The only difference is how particle data is stored in memory.
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+
+        for (std::size_t j = 0; j < particles.size(); ++j) {
+
+            if (i == j) {
+                continue;
+            }
+
+            const double displacement_x =
+                particles.position_x[j]
+                - particles.position_x[i];
+
+            const double displacement_y =
+                particles.position_y[j]
+                - particles.position_y[i];
+
+            const double displacement_z =
+                particles.position_z[j]
+                - particles.position_z[i];
+
+            const double distance_squared =
+                displacement_x * displacement_x
+                + displacement_y * displacement_y
+                + displacement_z * displacement_z
+                + softening_squared;
+
+            const double inverse_distance =
+                1.0 / std::sqrt(distance_squared);
+
+            const double inverse_distance_cubed =
+                inverse_distance
+                * inverse_distance
+                * inverse_distance;
+
+            const double acceleration_scale =
+                gravitational_constant
+                * particles.mass[j]
+                * inverse_distance_cubed;
+
+            particles.acceleration_x[i] +=
+                displacement_x * acceleration_scale;
+
+            particles.acceleration_y[i] +=
+                displacement_y * acceleration_scale;
+
+            particles.acceleration_z[i] +=
+                displacement_z * acceleration_scale;
+        }
+    }
+}
+
+void compute_accelerations_pairwise_soa(
+    ParticleSystemSoA& particles,
+    double gravitational_constant,
+    double softening
+)
+{
+    // Accelerations are recalculated from scratch every time.
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        particles.acceleration_x[i] = 0.0;
+        particles.acceleration_y[i] = 0.0;
+        particles.acceleration_z[i] = 0.0;
+    }
+
+    const double softening_squared =
+        softening * softening;
+
+    // Each unique pair is evaluated once.
+    // Starting j at i + 1 avoids self-interactions and prevents us from
+    // calculating both (i, j) and (j, i).
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+
+        for (std::size_t j = i + 1; j < particles.size(); ++j) {
+
+            const double displacement_x =
+                particles.position_x[j]
+                - particles.position_x[i];
+
+            const double displacement_y =
+                particles.position_y[j]
+                - particles.position_y[i];
+
+            const double displacement_z =
+                particles.position_z[j]
+                - particles.position_z[i];
+
+            const double distance_squared =
+                displacement_x * displacement_x
+                + displacement_y * displacement_y
+                + displacement_z * displacement_z
+                + softening_squared;
+
+            const double inverse_distance =
+                1.0 / std::sqrt(distance_squared);
+
+            const double inverse_distance_cubed =
+                inverse_distance
+                * inverse_distance
+                * inverse_distance;
+
+            // G and the distance factor are shared by both particles.
+            const double common_scale =
+                gravitational_constant
+                * inverse_distance_cubed;
+
+            // Acceleration of i caused by j.
+            const double scale_i =
+                common_scale
+                * particles.mass[j];
+
+            particles.acceleration_x[i] +=
+                displacement_x * scale_i;
+
+            particles.acceleration_y[i] +=
+                displacement_y * scale_i;
+
+            particles.acceleration_z[i] +=
+                displacement_z * scale_i;
+
+            // Acceleration of j caused by i.
+            // The displacement direction is reversed.
+            const double scale_j =
+                -common_scale
+                * particles.mass[i];
+
+            particles.acceleration_x[j] +=
+                displacement_x * scale_j;
+
+            particles.acceleration_y[j] +=
+                displacement_y * scale_j;
+
+            particles.acceleration_z[j] +=
+                displacement_z * scale_j;
+        }
+    }
+}
+
 }
