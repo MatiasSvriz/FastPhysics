@@ -32,6 +32,12 @@ void compute_accelerations_soa(
     double softening
 );
 
+void compute_accelerations_soa_restructured(
+    ParticleSystemSoA& particles,
+    double gravitational_constant,
+    double softening
+);
+
 // Pairwise gravity solver using Structure of Arrays.
 // Each unique particle pair is evaluated once, reducing the number of pair
 // evaluations to N * (N - 1) / 2 while keeping particle data in separate contiguous arrays.

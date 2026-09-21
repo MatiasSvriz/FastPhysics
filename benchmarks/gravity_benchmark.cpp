@@ -2,6 +2,7 @@
 #include "fastphysics/particle_system_soa.hpp"
 #include "fastphysics/scenarios.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -13,14 +14,39 @@ namespace {
 
 struct BenchmarkResult {
     double best_time_ms{};
+    double median_time_ms{};
     double average_time_ms{};
 };
 
-// AoS and SoA benchmarks use different particle types, so we keep two small
-// timing functions instead of forcing both layouts through the same interface.
-//
-// This keeps the benchmark simple and makes it clear what is actually being
-// measured in each case.
+// The median is less sensitive to occasional slow runs caused by operating
+// system scheduling, background processes, or other transient effects.
+
+// With an odd number of repetitions, the median is simply the middle value
+// after sorting the measurements.
+double calculate_median(
+    std::vector<double> timings
+)
+{
+    std::sort(
+        timings.begin(),
+        timings.end()
+    );
+
+    const std::size_t middle =
+        timings.size() / 2;
+
+    if (timings.size() % 2 == 0) {
+        return (
+            timings[middle - 1]
+            + timings[middle]
+        ) / 2.0;
+    }
+
+    return timings[middle];
+}
+
+// AoS and SoA benchmarks use different particle types, so we keep separate
+// timing functions instead of forcing all layouts through the same interface.
 BenchmarkResult benchmark_reference_aos(
     const std::vector<fastphysics::Particle>& initial_particles,
     std::size_t repetitions
@@ -41,12 +67,12 @@ BenchmarkResult benchmark_reference_aos(
     double total_time_ms = 0.0;
     double best_time_ms = 0.0;
 
-    for (std::size_t repetition = 0;
-         repetition < repetitions;
-         ++repetition) {
+    std::vector<double> timings;
+    timings.reserve(repetitions);
 
-        const auto start =
-            std::chrono::steady_clock::now();
+    for (std::size_t repetition = 0; repetition < repetitions; ++repetition) {
+
+        const auto start = std::chrono::steady_clock::now();
 
         fastphysics::compute_accelerations(
             particles,
@@ -54,8 +80,7 @@ BenchmarkResult benchmark_reference_aos(
             softening
         );
 
-        const auto end =
-            std::chrono::steady_clock::now();
+        const auto end = std::chrono::steady_clock::now();
 
         const double elapsed_ms =
             std::chrono::duration<double, std::milli>(
@@ -63,6 +88,7 @@ BenchmarkResult benchmark_reference_aos(
             ).count();
 
         total_time_ms += elapsed_ms;
+        timings.push_back(elapsed_ms);
 
         if (repetition == 0 || elapsed_ms < best_time_ms) {
             best_time_ms = elapsed_ms;
@@ -71,6 +97,7 @@ BenchmarkResult benchmark_reference_aos(
 
     return {
         best_time_ms,
+        calculate_median(timings),
         total_time_ms / static_cast<double>(repetitions)
     };
 }
@@ -85,6 +112,7 @@ BenchmarkResult benchmark_pairwise_aos(
     constexpr double gravitational_constant = 1.0;
     constexpr double softening = 0.01;
 
+    // Warm-up run.
     fastphysics::compute_accelerations_pairwise(
         particles,
         gravitational_constant,
@@ -93,6 +121,9 @@ BenchmarkResult benchmark_pairwise_aos(
 
     double total_time_ms = 0.0;
     double best_time_ms = 0.0;
+
+    std::vector<double> timings;
+    timings.reserve(repetitions);
 
     for (std::size_t repetition = 0;
          repetition < repetitions;
@@ -116,6 +147,7 @@ BenchmarkResult benchmark_pairwise_aos(
             ).count();
 
         total_time_ms += elapsed_ms;
+        timings.push_back(elapsed_ms);
 
         if (repetition == 0 || elapsed_ms < best_time_ms) {
             best_time_ms = elapsed_ms;
@@ -124,6 +156,7 @@ BenchmarkResult benchmark_pairwise_aos(
 
     return {
         best_time_ms,
+        calculate_median(timings),
         total_time_ms / static_cast<double>(repetitions)
     };
 }
@@ -138,6 +171,7 @@ BenchmarkResult benchmark_reference_soa(
     constexpr double gravitational_constant = 1.0;
     constexpr double softening = 0.01;
 
+    // Warm-up run.
     fastphysics::compute_accelerations_soa(
         particles,
         gravitational_constant,
@@ -146,6 +180,9 @@ BenchmarkResult benchmark_reference_soa(
 
     double total_time_ms = 0.0;
     double best_time_ms = 0.0;
+
+    std::vector<double> timings;
+    timings.reserve(repetitions);
 
     for (std::size_t repetition = 0;
          repetition < repetitions;
@@ -169,6 +206,7 @@ BenchmarkResult benchmark_reference_soa(
             ).count();
 
         total_time_ms += elapsed_ms;
+        timings.push_back(elapsed_ms);
 
         if (repetition == 0 || elapsed_ms < best_time_ms) {
             best_time_ms = elapsed_ms;
@@ -177,6 +215,66 @@ BenchmarkResult benchmark_reference_soa(
 
     return {
         best_time_ms,
+        calculate_median(timings),
+        total_time_ms / static_cast<double>(repetitions)
+    };
+}
+
+BenchmarkResult benchmark_restructured_soa(
+    const fastphysics::ParticleSystemSoA& initial_particles,
+    std::size_t repetitions
+)
+{
+    auto particles = initial_particles;
+
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
+
+    // Warm-up run.
+    fastphysics::compute_accelerations_soa_restructured(
+        particles,
+        gravitational_constant,
+        softening
+    );
+
+    double total_time_ms = 0.0;
+    double best_time_ms = 0.0;
+
+    std::vector<double> timings;
+    timings.reserve(repetitions);
+
+    for (std::size_t repetition = 0;
+         repetition < repetitions;
+         ++repetition) {
+
+        const auto start =
+            std::chrono::steady_clock::now();
+
+        fastphysics::compute_accelerations_soa_restructured(
+            particles,
+            gravitational_constant,
+            softening
+        );
+
+        const auto end =
+            std::chrono::steady_clock::now();
+
+        const double elapsed_ms =
+            std::chrono::duration<double, std::milli>(
+                end - start
+            ).count();
+
+        total_time_ms += elapsed_ms;
+        timings.push_back(elapsed_ms);
+
+        if (repetition == 0 || elapsed_ms < best_time_ms) {
+            best_time_ms = elapsed_ms;
+        }
+    }
+
+    return {
+        best_time_ms,
+        calculate_median(timings),
         total_time_ms / static_cast<double>(repetitions)
     };
 }
@@ -191,6 +289,7 @@ BenchmarkResult benchmark_pairwise_soa(
     constexpr double gravitational_constant = 1.0;
     constexpr double softening = 0.01;
 
+    // Warm-up run.
     fastphysics::compute_accelerations_pairwise_soa(
         particles,
         gravitational_constant,
@@ -199,6 +298,9 @@ BenchmarkResult benchmark_pairwise_soa(
 
     double total_time_ms = 0.0;
     double best_time_ms = 0.0;
+
+    std::vector<double> timings;
+    timings.reserve(repetitions);
 
     for (std::size_t repetition = 0;
          repetition < repetitions;
@@ -222,6 +324,7 @@ BenchmarkResult benchmark_pairwise_soa(
             ).count();
 
         total_time_ms += elapsed_ms;
+        timings.push_back(elapsed_ms);
 
         if (repetition == 0 || elapsed_ms < best_time_ms) {
             best_time_ms = elapsed_ms;
@@ -230,29 +333,20 @@ BenchmarkResult benchmark_pairwise_soa(
 
     return {
         best_time_ms,
+        calculate_median(timings),
         total_time_ms / static_cast<double>(repetitions)
     };
 }
 
 // We double N between measurements.
-//
-// If:
-//
-//     T(N) ~ N^p
-//
-// then:
-//
-//     T(2N) / T(N) ~ 2^p
-//
-// so:
-//
-//     p = log2(slowdown)
-//
+// If T(N) ~ N^p
+// then T(2N) / T(N) ~ 2^p
+// so p = log2(slowdown) where slowdown = T(2N) / T(N)
+
 // A direct N-body solver should stay close to p = 2 even when constant
-// factors change because of pairwise evaluation or memory layout.
-double calculate_scaling_exponent(
-    double slowdown
-)
+// factors change because of pairwise evaluation, memory layout, or
+// compiler optimizations.
+double calculate_scaling_exponent(double slowdown)
 {
     return std::log2(slowdown);
 }
@@ -260,7 +354,7 @@ double calculate_scaling_exponent(
 void print_result(
     const char* name,
     const BenchmarkResult& result,
-    double previous_average_ms
+    double previous_median_ms
 )
 {
     std::cout
@@ -268,15 +362,18 @@ void print_result(
         << "    best      : "
         << result.best_time_ms
         << " ms\n"
+        << "    median    : "
+        << result.median_time_ms
+        << " ms\n"
         << "    average   : "
         << result.average_time_ms
         << " ms\n";
 
-    if (previous_average_ms > 0.0) {
+    if (previous_median_ms > 0.0) {
 
         const double slowdown =
-            result.average_time_ms
-            / previous_average_ms;
+            result.median_time_ms
+            / previous_median_ms;
 
         const double scaling_exponent =
             calculate_scaling_exponent(
@@ -307,7 +404,7 @@ int main()
         6400
     };
 
-    constexpr std::size_t repetitions = 10;
+    constexpr std::size_t repetitions = 15;
 
     std::cout
         << "\n"
@@ -317,21 +414,24 @@ int main()
         << "Repetitions : "
         << repetitions
         << "\n\n"
-        << "Reference AoS : N * (N - 1) interactions\n"
-        << "Reference SoA : N * (N - 1) interactions\n"
-        << "Pairwise AoS  : N * (N - 1) / 2 pairs\n"
-        << "Pairwise SoA  : N * (N - 1) / 2 pairs\n\n"
-        << "All implementations remain O(N^2).\n\n";
+        << "Reference AoS      : N * (N - 1) interactions\n"
+        << "Reference SoA      : N * (N - 1) interactions\n"
+        << "Restructured SoA   : N * (N - 1) interactions\n"
+        << "Pairwise AoS       : N * (N - 1) / 2 pairs\n"
+        << "Pairwise SoA       : N * (N - 1) / 2 pairs\n\n"
+        << "All implementations remain O(N^2).\n"
+        << "Speedups and scaling use median execution times.\n\n";
 
     double previous_reference_aos = 0.0;
     double previous_reference_soa = 0.0;
+    double previous_restructured_soa = 0.0;
     double previous_pairwise_aos = 0.0;
     double previous_pairwise_soa = 0.0;
 
     for (const auto particle_count : particle_counts) {
 
         // Generate one physical system and derive the SoA version from it.
-        // This keeps all four benchmarks based on exactly the same data.
+        // This keeps all benchmarks based on exactly the same data.
         const auto aos_particles =
             fastphysics::make_benchmark_system(
                 particle_count
@@ -350,6 +450,12 @@ int main()
 
         const BenchmarkResult reference_soa =
             benchmark_reference_soa(
+                soa_particles,
+                repetitions
+            );
+
+        const BenchmarkResult restructured_soa =
+            benchmark_restructured_soa(
                 soa_particles,
                 repetitions
             );
@@ -384,6 +490,12 @@ int main()
         );
 
         print_result(
+            "Restructured SoA",
+            restructured_soa,
+            previous_restructured_soa
+        );
+
+        print_result(
             "Pairwise AoS",
             pairwise_aos,
             previous_pairwise_aos
@@ -397,59 +509,89 @@ int main()
 
         // Effect of changing only the memory layout on the reference solver.
         const double soa_speedup =
-            reference_aos.average_time_ms
-            / reference_soa.average_time_ms;
+            reference_aos.median_time_ms
+            / reference_soa.median_time_ms;
+
+        // Effect of restructuring the SoA reference solver while keeping
+        // exactly the same N * (N - 1) interaction count.
+        const double restructuring_speedup =
+            reference_soa.median_time_ms
+            / restructured_soa.median_time_ms;
+
+        // Overall improvement from the original AoS reference solver to the
+        // restructured SoA reference solver.
+        const double restructured_vs_original =
+            reference_aos.median_time_ms
+            / restructured_soa.median_time_ms;
 
         // Effect of pairwise evaluation while keeping AoS.
         const double pairwise_speedup =
-            reference_aos.average_time_ms
-            / pairwise_aos.average_time_ms;
+            reference_aos.median_time_ms
+            / pairwise_aos.median_time_ms;
 
         // Effect of pairwise evaluation while keeping SoA.
         const double pairwise_on_soa_speedup =
-            reference_soa.average_time_ms
-            / pairwise_soa.average_time_ms;
+            reference_soa.median_time_ms
+            / pairwise_soa.median_time_ms;
 
         // Effect of changing to SoA after pairwise optimization.
         const double soa_on_pairwise_speedup =
-            pairwise_aos.average_time_ms
-            / pairwise_soa.average_time_ms;
+            pairwise_aos.median_time_ms
+            / pairwise_soa.median_time_ms;
+
+        // Direct comparison between the restructured full-interaction solver
+        // and the pairwise SoA solver.
+        const double pairwise_vs_restructured =
+            restructured_soa.median_time_ms
+            / pairwise_soa.median_time_ms;
 
         // Total improvement relative to the original Reference AoS solver.
         const double combined_speedup =
-            reference_aos.average_time_ms
-            / pairwise_soa.average_time_ms;
+            reference_aos.median_time_ms
+            / pairwise_soa.median_time_ms;
 
         std::cout
-            << "  Speedups\n"
-            << "    SoA on reference      : "
+            << "  Speedups (median)\n"
+            << "    SoA on reference          : "
             << soa_speedup
             << "x\n"
-            << "    Pairwise on AoS       : "
+            << "    Restructuring on SoA      : "
+            << restructuring_speedup
+            << "x\n"
+            << "    Restructured vs original  : "
+            << restructured_vs_original
+            << "x\n"
+            << "    Pairwise on AoS           : "
             << pairwise_speedup
             << "x\n"
-            << "    Pairwise on SoA       : "
+            << "    Pairwise on SoA           : "
             << pairwise_on_soa_speedup
             << "x\n"
-            << "    SoA on pairwise       : "
+            << "    SoA on pairwise           : "
             << soa_on_pairwise_speedup
             << "x\n"
-            << "    Combined vs original  : "
+            << "    Pairwise vs restructured  : "
+            << pairwise_vs_restructured
+            << "x\n"
+            << "    Combined vs original      : "
             << combined_speedup
             << "x\n\n";
 
         previous_reference_aos =
-            reference_aos.average_time_ms;
+            reference_aos.median_time_ms;
 
         previous_reference_soa =
-            reference_soa.average_time_ms;
+            reference_soa.median_time_ms;
+
+        previous_restructured_soa =
+            restructured_soa.median_time_ms;
 
         previous_pairwise_aos =
-            pairwise_aos.average_time_ms;
+            pairwise_aos.median_time_ms;
 
         previous_pairwise_soa =
-            pairwise_soa.average_time_ms;
+            pairwise_soa.median_time_ms;
     }
 
     return 0;
-}
+}   

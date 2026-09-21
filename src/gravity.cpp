@@ -201,6 +201,125 @@ void compute_accelerations_soa(
     }
 }
 
+void compute_accelerations_soa_restructured(
+    ParticleSystemSoA& particles,
+    double gravitational_constant,
+    double softening
+)
+{
+    const std::size_t particle_count = particles.size();
+
+    const double softening_squared =
+        softening * softening;
+
+    // This version keeps the same N * (N - 1) interaction count as the
+    // reference SoA solver, but restructures the inner loop to make it
+    // friendlier to compiler auto-vectorization.
+    for (std::size_t i = 0; i < particle_count; ++i) {
+
+        // Particle i remains constant during the whole inner loop.
+        // Load its position once instead of reading it repeatedly.
+        const double position_i_x = particles.position_x[i];
+        const double position_i_y = particles.position_y[i];
+        const double position_i_z = particles.position_z[i];
+
+        // Accumulate the acceleration locally.
+        // This avoids repeatedly writing to acceleration_x/y/z[i]
+        // inside the inner loop.
+        double acceleration_x = 0.0;
+        double acceleration_y = 0.0;
+        double acceleration_z = 0.0;
+
+        // Interactions with particles before i.
+        for (std::size_t j = 0; j < i; ++j) {
+
+            const double displacement_x =
+                particles.position_x[j] - position_i_x;
+
+            const double displacement_y =
+                particles.position_y[j] - position_i_y;
+
+            const double displacement_z =
+                particles.position_z[j] - position_i_z;
+
+            const double distance_squared =
+                displacement_x * displacement_x
+                + displacement_y * displacement_y
+                + displacement_z * displacement_z
+                + softening_squared;
+
+            const double inverse_distance =
+                1.0 / std::sqrt(distance_squared);
+
+            const double inverse_distance_cubed =
+                inverse_distance
+                * inverse_distance
+                * inverse_distance;
+
+            const double acceleration_scale =
+                gravitational_constant
+                * particles.mass[j]
+                * inverse_distance_cubed;
+
+            acceleration_x +=
+                displacement_x * acceleration_scale;
+
+            acceleration_y +=
+                displacement_y * acceleration_scale;
+
+            acceleration_z +=
+                displacement_z * acceleration_scale;
+        }
+
+        // Skip j == i completely and continue with particles after i.
+        // Splitting the range removes the branch if (i == j) from the hot loop.
+        for (std::size_t j = i + 1; j < particle_count; ++j) {
+
+            const double displacement_x =
+                particles.position_x[j] - position_i_x;
+
+            const double displacement_y =
+                particles.position_y[j] - position_i_y;
+
+            const double displacement_z =
+                particles.position_z[j] - position_i_z;
+
+            const double distance_squared =
+                displacement_x * displacement_x
+                + displacement_y * displacement_y
+                + displacement_z * displacement_z
+                + softening_squared;
+
+            const double inverse_distance =
+                1.0 / std::sqrt(distance_squared);
+
+            const double inverse_distance_cubed =
+                inverse_distance
+                * inverse_distance
+                * inverse_distance;
+
+            const double acceleration_scale =
+                gravitational_constant
+                * particles.mass[j]
+                * inverse_distance_cubed;
+
+            acceleration_x +=
+                displacement_x * acceleration_scale;
+
+            acceleration_y +=
+                displacement_y * acceleration_scale;
+
+            acceleration_z +=
+                displacement_z * acceleration_scale;
+        }
+
+        // Only one write per acceleration component and particle.
+        particles.acceleration_x[i] = acceleration_x;
+        particles.acceleration_y[i] = acceleration_y;
+        particles.acceleration_z[i] = acceleration_z;
+    }
+}
+
 void compute_accelerations_pairwise_soa(
     ParticleSystemSoA& particles,
     double gravitational_constant,
@@ -218,8 +337,7 @@ void compute_accelerations_pairwise_soa(
         softening * softening;
 
     // Each unique pair is evaluated once.
-    // Starting j at i + 1 avoids self-interactions and prevents us from
-    // calculating both (i, j) and (j, i).
+    // Starting j at i + 1 avoids self-interactions and prevents us from calculating both (i, j) and (j, i).
     for (std::size_t i = 0; i < particles.size(); ++i) {
 
         for (std::size_t j = i + 1; j < particles.size(); ++j) {
