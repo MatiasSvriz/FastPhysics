@@ -4,6 +4,9 @@
 #include "fastphysics/particle_system_soa.hpp"
 
 #include <vector>
+#include <cmath>
+#include <cstddef>
+#include <immintrin.h>
 
 namespace fastphysics {
 
@@ -42,6 +45,15 @@ void compute_accelerations_soa_restructured(
 // Each unique particle pair is evaluated once, reducing the number of pair
 // evaluations to N * (N - 1) / 2 while keeping particle data in separate contiguous arrays.
 void compute_accelerations_pairwise_soa(
+    ParticleSystemSoA& particles,
+    double gravitational_constant,
+    double softening
+);
+
+// Manual SIMD gravity solver using AVX.
+// This follows the same N * (N - 1) interaction model as the reference and restructured SoA solvers,
+// but explicitly processes multiple particle interactions at once using 256-bit SIMD instructions.
+void compute_accelerations_soa_avx(
     ParticleSystemSoA& particles,
     double gravitational_constant,
     double softening

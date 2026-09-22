@@ -58,6 +58,7 @@ BenchmarkResult benchmark_reference_aos(
     constexpr double softening = 0.01;
 
     // Warm-up run to reduce first-run effects.
+    // We excecute the algorith but we dont make it count.
     fastphysics::compute_accelerations(
         particles,
         gravitational_constant,
@@ -279,6 +280,65 @@ BenchmarkResult benchmark_restructured_soa(
     };
 }
 
+BenchmarkResult benchmark_avx_soa(
+    const fastphysics::ParticleSystemSoA& initial_particles,
+    std::size_t repetitions
+)
+{
+    auto particles = initial_particles;
+
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
+
+    // Warm up the manual AVX implementation before measuring it.
+    fastphysics::compute_accelerations_soa_avx(
+        particles,
+        gravitational_constant,
+        softening
+    );
+
+    double total_time_ms = 0.0;
+    double best_time_ms = 0.0;
+
+    std::vector<double> timings;
+    timings.reserve(repetitions);
+
+    for (std::size_t repetition = 0;
+         repetition < repetitions;
+         ++repetition) {
+
+        const auto start =
+            std::chrono::steady_clock::now();
+
+        fastphysics::compute_accelerations_soa_avx(
+            particles,
+            gravitational_constant,
+            softening
+        );
+
+        const auto end =
+            std::chrono::steady_clock::now();
+
+        const double elapsed_ms =
+            std::chrono::duration<double, std::milli>(
+                end - start
+            ).count();
+
+        total_time_ms += elapsed_ms;
+        timings.push_back(elapsed_ms);
+
+        if (repetition == 0 || elapsed_ms < best_time_ms) {
+            best_time_ms = elapsed_ms;
+        }
+    }
+
+    return {
+        best_time_ms,
+        calculate_median(timings),
+        total_time_ms / static_cast<double>(repetitions)
+    };
+}
+
 BenchmarkResult benchmark_pairwise_soa(
     const fastphysics::ParticleSystemSoA& initial_particles,
     std::size_t repetitions
@@ -417,6 +477,7 @@ int main()
         << "Reference AoS      : N * (N - 1) interactions\n"
         << "Reference SoA      : N * (N - 1) interactions\n"
         << "Restructured SoA   : N * (N - 1) interactions\n"
+        << "Manual AVX SoA     : N * (N - 1) interactions\n"
         << "Pairwise AoS       : N * (N - 1) / 2 pairs\n"
         << "Pairwise SoA       : N * (N - 1) / 2 pairs\n\n"
         << "All implementations remain O(N^2).\n"
@@ -425,13 +486,14 @@ int main()
     double previous_reference_aos = 0.0;
     double previous_reference_soa = 0.0;
     double previous_restructured_soa = 0.0;
+    double previous_avx_soa = 0.0;
     double previous_pairwise_aos = 0.0;
     double previous_pairwise_soa = 0.0;
 
     for (const auto particle_count : particle_counts) {
 
         // Generate one physical system and derive the SoA version from it.
-        // This keeps all benchmarks based on exactly the same data.
+        // Every implementation therefore starts from exactly the same data.
         const auto aos_particles =
             fastphysics::make_benchmark_system(
                 particle_count
@@ -456,6 +518,12 @@ int main()
 
         const BenchmarkResult restructured_soa =
             benchmark_restructured_soa(
+                soa_particles,
+                repetitions
+            );
+
+        const BenchmarkResult avx_soa =
+            benchmark_avx_soa(
                 soa_particles,
                 repetitions
             );
@@ -496,6 +564,12 @@ int main()
         );
 
         print_result(
+            "Manual AVX SoA",
+            avx_soa,
+            previous_avx_soa
+        );
+
+        print_result(
             "Pairwise AoS",
             pairwise_aos,
             previous_pairwise_aos
@@ -507,22 +581,36 @@ int main()
             previous_pairwise_soa
         );
 
-        // Effect of changing only the memory layout on the reference solver.
+        // Memory-layout improvement only.
         const double soa_speedup =
             reference_aos.median_time_ms
             / reference_soa.median_time_ms;
 
-        // Effect of restructuring the SoA reference solver while keeping
-        // exactly the same N * (N - 1) interaction count.
+        // Improvement from making the SoA loop easier for GCC to vectorize.
         const double restructuring_speedup =
             reference_soa.median_time_ms
             / restructured_soa.median_time_ms;
 
-        // Overall improvement from the original AoS reference solver to the
-        // restructured SoA reference solver.
+        // Total improvement of auto-vectorized SoA over the original solver.
         const double restructured_vs_original =
             reference_aos.median_time_ms
             / restructured_soa.median_time_ms;
+
+        // Main Day 17 comparison:
+        //
+        //     auto-vectorized GCC code
+        //              vs
+        //     manually written AVX intrinsics
+        //
+        // Greater than 1 means Manual AVX is faster.
+        const double manual_avx_vs_auto =
+            restructured_soa.median_time_ms
+            / avx_soa.median_time_ms;
+
+        // Total improvement of Manual AVX over the original AoS solver.
+        const double avx_vs_original =
+            reference_aos.median_time_ms
+            / avx_soa.median_time_ms;
 
         // Effect of pairwise evaluation while keeping AoS.
         const double pairwise_speedup =
@@ -539,13 +627,19 @@ int main()
             pairwise_aos.median_time_ms
             / pairwise_soa.median_time_ms;
 
-        // Direct comparison between the restructured full-interaction solver
-        // and the pairwise SoA solver.
+        // Compare the pairwise solver against the auto-vectorized full solver.
         const double pairwise_vs_restructured =
             restructured_soa.median_time_ms
             / pairwise_soa.median_time_ms;
 
-        // Total improvement relative to the original Reference AoS solver.
+        // Compare the pairwise solver against our manual AVX solver.
+        //
+        // Greater than 1 means Pairwise SoA is faster.
+        const double pairwise_vs_avx =
+            avx_soa.median_time_ms
+            / pairwise_soa.median_time_ms;
+
+        // Total improvement of the pairwise SoA solver over the original.
         const double combined_speedup =
             reference_aos.median_time_ms
             / pairwise_soa.median_time_ms;
@@ -561,6 +655,12 @@ int main()
             << "    Restructured vs original  : "
             << restructured_vs_original
             << "x\n"
+            << "    Manual AVX vs auto-SIMD   : "
+            << manual_avx_vs_auto
+            << "x\n"
+            << "    Manual AVX vs original    : "
+            << avx_vs_original
+            << "x\n"
             << "    Pairwise on AoS           : "
             << pairwise_speedup
             << "x\n"
@@ -572,6 +672,9 @@ int main()
             << "x\n"
             << "    Pairwise vs restructured  : "
             << pairwise_vs_restructured
+            << "x\n"
+            << "    Pairwise vs Manual AVX    : "
+            << pairwise_vs_avx
             << "x\n"
             << "    Combined vs original      : "
             << combined_speedup
@@ -586,6 +689,9 @@ int main()
         previous_restructured_soa =
             restructured_soa.median_time_ms;
 
+        previous_avx_soa =
+            avx_soa.median_time_ms;
+
         previous_pairwise_aos =
             pairwise_aos.median_time_ms;
 
@@ -594,4 +700,4 @@ int main()
     }
 
     return 0;
-}   
+}
