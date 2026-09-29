@@ -28,6 +28,12 @@ option(
     OFF
 )
 
+option(
+    FASTPHYSICS_ENABLE_OPENMP
+    "Enable OpenMP multithreading"
+    ON
+)
+
 # ---------------------------------------------------------------------------
 # Core library
 # ---------------------------------------------------------------------------
@@ -64,6 +70,48 @@ set_target_properties(
 )
 
 # ---------------------------------------------------------------------------
+# Manual SIMD support
+# ---------------------------------------------------------------------------
+
+# gravity.cpp contains explicit AVX and FMA intrinsics.
+#
+# -mavx enables 256-bit AVX floating-point instructions.
+# -mfma enables fused multiply-add instructions such as _mm256_fmadd_pd().
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+
+    target_compile_options(
+        fastphysics_core
+        PRIVATE
+        -mavx
+        -mfma
+    )
+
+endif()
+
+# ---------------------------------------------------------------------------
+# OpenMP
+# ---------------------------------------------------------------------------
+
+# OpenMP is used by the multithreaded gravity solver.
+#
+# Linking it PUBLICly through fastphysics_core propagates the OpenMP
+# requirement to executables and tests that use the core library.
+if(FASTPHYSICS_ENABLE_OPENMP)
+
+    find_package(
+        OpenMP
+        REQUIRED
+    )
+
+    target_link_libraries(
+        fastphysics_core
+        PUBLIC
+        OpenMP::OpenMP_CXX
+    )
+
+endif()
+
+# ---------------------------------------------------------------------------
 # Main executable
 # ---------------------------------------------------------------------------
 
@@ -88,6 +136,8 @@ set_target_properties(
 # Benchmarks
 # ---------------------------------------------------------------------------
 
+# Gravity optimization benchmark
+
 add_executable(
     gravity_benchmark
     benchmarks/gravity_benchmark.cpp
@@ -105,6 +155,8 @@ set_target_properties(
     CXX_EXTENSIONS OFF
 )
 
+# Memory layout benchmark
+
 add_executable(
     memory_layout
     benchmarks/memory_layout.cpp
@@ -121,6 +173,31 @@ set_target_properties(
     PROPERTIES
     CXX_EXTENSIONS OFF
 )
+
+# OpenMP scaling benchmark
+#
+# This benchmark uses the OpenMP runtime directly to control the number
+# of threads, so it is only built when OpenMP support is enabled.
+if(FASTPHYSICS_ENABLE_OPENMP)
+
+    add_executable(
+        openmp_scaling
+        benchmarks/openmp_scaling.cpp
+    )
+
+    target_link_libraries(
+        openmp_scaling
+        PRIVATE
+        fastphysics_core
+    )
+
+    set_target_properties(
+        openmp_scaling
+        PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -406,6 +483,18 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wpedantic
     )
 
+    if(FASTPHYSICS_ENABLE_OPENMP)
+
+        target_compile_options(
+            openmp_scaling
+            PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+
+    endif()
+
     target_compile_options(
         fastphysics_tests
         PRIVATE
@@ -509,6 +598,16 @@ if(
         -march=native
     )
 
+    if(FASTPHYSICS_ENABLE_OPENMP)
+
+        target_compile_options(
+            openmp_scaling
+            PRIVATE
+            -march=native
+        )
+
+    endif()
+
 endif()
 
 # ---------------------------------------------------------------------------
@@ -591,7 +690,7 @@ if(
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
 
-    # Memory layout tool
+    # Memory layout benchmark
 
     target_compile_options(
         memory_layout
@@ -604,6 +703,24 @@ if(
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
+
+    # OpenMP scaling benchmark
+
+    if(FASTPHYSICS_ENABLE_OPENMP)
+
+        target_compile_options(
+            openmp_scaling
+            PRIVATE
+            ${FASTPHYSICS_SANITIZER_FLAGS}
+        )
+
+        target_link_options(
+            openmp_scaling
+            PRIVATE
+            ${FASTPHYSICS_SANITIZER_FLAGS}
+        )
+
+    endif()
 
     # Vec3 tests
 

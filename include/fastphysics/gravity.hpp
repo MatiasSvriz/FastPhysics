@@ -59,4 +59,13 @@ void compute_accelerations_soa_avx(
     double softening
 );
 
+// Multithreaded version of the manual AVX gravity solver.
+// The outer particle loop is distributed across CPU threads with OpenMP,
+// while each thread still uses AVX to process four interactions at a time.
+void compute_accelerations_soa_avx_openmp(
+    ParticleSystemSoA& particles,
+    double gravitational_constant,
+    double softening
+);
+
 }

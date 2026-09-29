@@ -9,43 +9,46 @@ namespace fastphysics {
 
 namespace {
 
-// Adds the four double values stored inside a 256-bit AVX register.
-// [a, b, c, d] -> a + b + c + d
+// Adds the four double values stored in one 256-bit AVX register.
+// Input of values,  [a, b, c, d]
+// Output,  a + b + c + d
+// AVX works vertically, lane by lane, so there is no single instruction here
+// that directly gives us the sum of all four lanes, so we reduce the register step by step.
 double horizontal_sum(
     __m256d values
 )
 {
-    // Split the 256-bit register into two 128-bit halves.
-    const __m128d lower =
-        _mm256_castpd256_pd128(values);
+    // A __m256d contains four doubles,
+    //     values = [a, b, c, d]
+    // Split it into two 128-bit registers, each containing two doubles.
+    //     lower = [a, b]
+    //     upper = [c, d]
+    // This takes the lower 128 bits.
+    const __m128d lower = _mm256_castpd256_pd128(values);
 
-    const __m128d upper =
-        _mm256_extractf128_pd(
-            values,
-            1
-        );
+    // This extracts the upper 128 bits.
+    const __m128d upper =_mm256_extractf128_pd(values, 1);
 
-    // [a, b] + [c, d] = [a + c, b + d]
-    const __m128d pair_sum =
-        _mm_add_pd(
-            lower,
-            upper
-        );
+    // Add the two registers lane by lane,
+    //     lower = [a,     b]
+    //     upper = [c,     d]
+    // pair_sum = [a + c, b + d]
+    // We now only need to add these two remaining values together.
+    const __m128d pair_sum = _mm_add_pd(lower, upper);
 
-    // Move the second value into the lower position.
-    const __m128d high_value =
-        _mm_unpackhi_pd(
-            pair_sum,
-            pair_sum
-        );
+    // Take the high lane of pair_sum and duplicate it into both lanes.
+    // Before, pair_sum = [a + c, b + d]
+    // After, high_value = [b + d, b + d]
+    // We do this because the next instruction adds only the lower lanes.
+    const __m128d high_value = _mm_unpackhi_pd(pair_sum, pair_sum);
 
-    // (a + c) + (b + d)
-    const __m128d total =
-        _mm_add_sd(
-            pair_sum,
-            high_value
-        );
+    // Add the two remaining values,
+    //     [a + c, b + d]
+    //        ↓      ↓
+    //     (a + c) + (b + d)
+    const __m128d total = _mm_add_sd(pair_sum, high_value);
 
+    // Return the final sum stored in the lower lane.
     return _mm_cvtsd_f64(total);
 }
 
@@ -79,35 +82,25 @@ void compute_accelerations(
             }
 
             // Vector from particle i to particle j.
-            const Vec3 displacement =
-                particles[j].position - particles[i].position;
+            const Vec3 displacement = particles[j].position - particles[i].position;
 
             // Softened squared distance: r^2 + epsilon^2.
-            const double distance_squared =
-                norm_squared(displacement) + softening_squared;
+            const double distance_squared = norm_squared(displacement) + softening_squared;
 
             // Compute 1 / distance once and reuse it below.
-            const double inverse_distance =
-                1.0 / std::sqrt(distance_squared);
+            const double inverse_distance = 1.0 / std::sqrt(distance_squared);
 
             // Gives 1 / (r^2 + epsilon^2)^(3/2).
-            const double inverse_distance_cubed =
-                inverse_distance
-                * inverse_distance
-                * inverse_distance;
+            const double inverse_distance_cubed = inverse_distance * inverse_distance * inverse_distance;
 
             // Acceleration of i caused by j, 
             // a_i = G * m_j * r_ij / (r^2 + epsilon^2)^(3/2)
 
             // The mass of particle i does not appear because it cancels
             // when going from force to acceleration.
-            const double acceleration_scale =
-                gravitational_constant
-                * particles[j].mass
-                * inverse_distance_cubed;
+            const double acceleration_scale = gravitational_constant * particles[j].mass * inverse_distance_cubed;
 
-            particles[i].acceleration +=
-                displacement * acceleration_scale;
+            particles[i].acceleration += displacement * acceleration_scale;
         }
     }
 }
@@ -921,6 +914,456 @@ void compute_accelerations_soa_avx(
             );
 
         // Store the final acceleration of particle i.
+        particles.acceleration_x[i] =
+            acceleration_x;
+
+        particles.acceleration_y[i] =
+            acceleration_y;
+
+        particles.acceleration_z[i] =
+            acceleration_z;
+    }
+}
+
+void compute_accelerations_soa_avx_openmp(
+    ParticleSystemSoA& particles,
+    double gravitational_constant,
+    double softening
+)
+{
+    const std::size_t particle_count =
+        particles.size();
+
+    const double softening_squared =
+        softening * softening;
+
+    // These SIMD constants are read-only, so every thread can safely share them during the parallel calculation.
+    const __m256d one_vector =
+        _mm256_set1_pd(1.0);
+
+    const __m256d gravitational_constant_vector =
+        _mm256_set1_pd(
+            gravitational_constant
+        );
+
+    const __m256d softening_squared_vector =
+        _mm256_set1_pd(
+            softening_squared
+        );
+
+    // Each iteration handles one particle.
+    // Threads share the positions and masses only for reading,
+    // but each thread writes to a different acceleration[i].
+    // Because no two iterations write to the same value, the loop can be safely parallelized.
+    #pragma omp parallel for schedule(static)
+    for (std::size_t i = 0;
+         i < particle_count;
+         ++i) {
+
+        const double position_i_x =
+            particles.position_x[i];
+
+        const double position_i_y =
+            particles.position_y[i];
+
+        const double position_i_z =
+            particles.position_z[i];
+
+        // Each thread copies the position of its current particle i
+        // and then uses AVX to process four particles j at a time.
+        const __m256d position_i_x_vector =
+            _mm256_set1_pd(
+                position_i_x
+            );
+
+        const __m256d position_i_y_vector =
+            _mm256_set1_pd(
+                position_i_y
+            );
+
+        const __m256d position_i_z_vector =
+            _mm256_set1_pd(
+                position_i_z
+            );
+
+        __m256d acceleration_x_vector =
+            _mm256_setzero_pd();
+
+        __m256d acceleration_y_vector =
+            _mm256_setzero_pd();
+
+        __m256d acceleration_z_vector =
+            _mm256_setzero_pd();
+
+        double acceleration_x = 0.0;
+        double acceleration_y = 0.0;
+        double acceleration_z = 0.0;
+
+        std::size_t j = 0;
+
+        // Particles before i
+
+        for (; j + 3 < i; j += 4) {
+
+            const __m256d position_j_x =
+                _mm256_loadu_pd(
+                    &particles.position_x[j]
+                );
+
+            const __m256d position_j_y =
+                _mm256_loadu_pd(
+                    &particles.position_y[j]
+                );
+
+            const __m256d position_j_z =
+                _mm256_loadu_pd(
+                    &particles.position_z[j]
+                );
+
+            const __m256d displacement_x =
+                _mm256_sub_pd(
+                    position_j_x,
+                    position_i_x_vector
+                );
+
+            const __m256d displacement_y =
+                _mm256_sub_pd(
+                    position_j_y,
+                    position_i_y_vector
+                );
+
+            const __m256d displacement_z =
+                _mm256_sub_pd(
+                    position_j_z,
+                    position_i_z_vector
+                );
+
+            __m256d distance_squared =
+                _mm256_mul_pd(
+                    displacement_x,
+                    displacement_x
+                );
+
+            distance_squared =
+                _mm256_fmadd_pd(
+                    displacement_y,
+                    displacement_y,
+                    distance_squared
+                );
+
+            distance_squared =
+                _mm256_fmadd_pd(
+                    displacement_z,
+                    displacement_z,
+                    distance_squared
+                );
+
+            distance_squared =
+                _mm256_add_pd(
+                    distance_squared,
+                    softening_squared_vector
+                );
+
+            const __m256d distance =
+                _mm256_sqrt_pd(
+                    distance_squared
+                );
+
+            const __m256d inverse_distance =
+                _mm256_div_pd(
+                    one_vector,
+                    distance
+                );
+
+            const __m256d inverse_distance_squared =
+                _mm256_mul_pd(
+                    inverse_distance,
+                    inverse_distance
+                );
+
+            const __m256d inverse_distance_cubed =
+                _mm256_mul_pd(
+                    inverse_distance_squared,
+                    inverse_distance
+                );
+
+            const __m256d mass =
+                _mm256_loadu_pd(
+                    &particles.mass[j]
+                );
+
+            const __m256d gravitational_mass =
+                _mm256_mul_pd(
+                    gravitational_constant_vector,
+                    mass
+                );
+
+            const __m256d acceleration_scale =
+                _mm256_mul_pd(
+                    gravitational_mass,
+                    inverse_distance_cubed
+                );
+
+            acceleration_x_vector =
+                _mm256_fmadd_pd(
+                    displacement_x,
+                    acceleration_scale,
+                    acceleration_x_vector
+                );
+
+            acceleration_y_vector =
+                _mm256_fmadd_pd(
+                    displacement_y,
+                    acceleration_scale,
+                    acceleration_y_vector
+                );
+
+            acceleration_z_vector =
+                _mm256_fmadd_pd(
+                    displacement_z,
+                    acceleration_scale,
+                    acceleration_z_vector
+                );
+        }
+
+        // Scalar tail before i.
+        for (; j < i; ++j) {
+
+            const double displacement_x =
+                particles.position_x[j]
+                - position_i_x;
+
+            const double displacement_y =
+                particles.position_y[j]
+                - position_i_y;
+
+            const double displacement_z =
+                particles.position_z[j]
+                - position_i_z;
+
+            const double distance_squared =
+                displacement_x * displacement_x
+                + displacement_y * displacement_y
+                + displacement_z * displacement_z
+                + softening_squared;
+
+            const double inverse_distance =
+                1.0 / std::sqrt(distance_squared);
+
+            const double inverse_distance_cubed =
+                inverse_distance
+                * inverse_distance
+                * inverse_distance;
+
+            const double acceleration_scale =
+                gravitational_constant
+                * particles.mass[j]
+                * inverse_distance_cubed;
+
+            acceleration_x +=
+                displacement_x
+                * acceleration_scale;
+
+            acceleration_y +=
+                displacement_y
+                * acceleration_scale;
+
+            acceleration_z +=
+                displacement_z
+                * acceleration_scale;
+        }
+
+        // Particles after i
+
+        j = i + 1;
+
+        for (; j + 3 < particle_count; j += 4) {
+
+            const __m256d position_j_x =
+                _mm256_loadu_pd(
+                    &particles.position_x[j]
+                );
+
+            const __m256d position_j_y =
+                _mm256_loadu_pd(
+                    &particles.position_y[j]
+                );
+
+            const __m256d position_j_z =
+                _mm256_loadu_pd(
+                    &particles.position_z[j]
+                );
+
+            const __m256d displacement_x =
+                _mm256_sub_pd(
+                    position_j_x,
+                    position_i_x_vector
+                );
+
+            const __m256d displacement_y =
+                _mm256_sub_pd(
+                    position_j_y,
+                    position_i_y_vector
+                );
+
+            const __m256d displacement_z =
+                _mm256_sub_pd(
+                    position_j_z,
+                    position_i_z_vector
+                );
+
+            __m256d distance_squared =
+                _mm256_mul_pd(
+                    displacement_x,
+                    displacement_x
+                );
+
+            distance_squared =
+                _mm256_fmadd_pd(
+                    displacement_y,
+                    displacement_y,
+                    distance_squared
+                );
+
+            distance_squared =
+                _mm256_fmadd_pd(
+                    displacement_z,
+                    displacement_z,
+                    distance_squared
+                );
+
+            distance_squared =
+                _mm256_add_pd(
+                    distance_squared,
+                    softening_squared_vector
+                );
+
+            const __m256d distance =
+                _mm256_sqrt_pd(
+                    distance_squared
+                );
+
+            const __m256d inverse_distance =
+                _mm256_div_pd(
+                    one_vector,
+                    distance
+                );
+
+            const __m256d inverse_distance_squared =
+                _mm256_mul_pd(
+                    inverse_distance,
+                    inverse_distance
+                );
+
+            const __m256d inverse_distance_cubed =
+                _mm256_mul_pd(
+                    inverse_distance_squared,
+                    inverse_distance
+                );
+
+            const __m256d mass =
+                _mm256_loadu_pd(
+                    &particles.mass[j]
+                );
+
+            const __m256d gravitational_mass =
+                _mm256_mul_pd(
+                    gravitational_constant_vector,
+                    mass
+                );
+
+            const __m256d acceleration_scale =
+                _mm256_mul_pd(
+                    gravitational_mass,
+                    inverse_distance_cubed
+                );
+
+            acceleration_x_vector =
+                _mm256_fmadd_pd(
+                    displacement_x,
+                    acceleration_scale,
+                    acceleration_x_vector
+                );
+
+            acceleration_y_vector =
+                _mm256_fmadd_pd(
+                    displacement_y,
+                    acceleration_scale,
+                    acceleration_y_vector
+                );
+
+            acceleration_z_vector =
+                _mm256_fmadd_pd(
+                    displacement_z,
+                    acceleration_scale,
+                    acceleration_z_vector
+                );
+        }
+
+        // Scalar tail after i.
+        for (; j < particle_count; ++j) {
+
+            const double displacement_x =
+                particles.position_x[j]
+                - position_i_x;
+
+            const double displacement_y =
+                particles.position_y[j]
+                - position_i_y;
+
+            const double displacement_z =
+                particles.position_z[j]
+                - position_i_z;
+
+            const double distance_squared =
+                displacement_x * displacement_x
+                + displacement_y * displacement_y
+                + displacement_z * displacement_z
+                + softening_squared;
+
+            const double inverse_distance =
+                1.0 / std::sqrt(distance_squared);
+
+            const double inverse_distance_cubed =
+                inverse_distance
+                * inverse_distance
+                * inverse_distance;
+
+            const double acceleration_scale =
+                gravitational_constant
+                * particles.mass[j]
+                * inverse_distance_cubed;
+
+            acceleration_x +=
+                displacement_x
+                * acceleration_scale;
+
+            acceleration_y +=
+                displacement_y
+                * acceleration_scale;
+
+            acceleration_z +=
+                displacement_z
+                * acceleration_scale;
+        }
+
+        // Reduce the four AVX lanes and add the scalar-tail contributions.
+        acceleration_x +=
+            horizontal_sum(
+                acceleration_x_vector
+            );
+
+        acceleration_y +=
+            horizontal_sum(
+                acceleration_y_vector
+            );
+
+        acceleration_z +=
+            horizontal_sum(
+                acceleration_z_vector
+            );
+
+        // This iteration owns index i, so no other thread writes here.
         particles.acceleration_x[i] =
             acceleration_x;
 

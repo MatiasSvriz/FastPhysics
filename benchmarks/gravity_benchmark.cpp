@@ -2,6 +2,8 @@
 #include "fastphysics/particle_system_soa.hpp"
 #include "fastphysics/scenarios.hpp"
 
+#include <omp.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -32,14 +34,10 @@ double calculate_median(
         timings.end()
     );
 
-    const std::size_t middle =
-        timings.size() / 2;
+    const std::size_t middle = timings.size() / 2;
 
     if (timings.size() % 2 == 0) {
-        return (
-            timings[middle - 1]
-            + timings[middle]
-        ) / 2.0;
+        return (timings[middle - 1] + timings[middle]) / 2.0;
     }
 
     return timings[middle];
@@ -83,10 +81,7 @@ BenchmarkResult benchmark_reference_aos(
 
         const auto end = std::chrono::steady_clock::now();
 
-        const double elapsed_ms =
-            std::chrono::duration<double, std::milli>(
-                end - start
-            ).count();
+        const double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
         total_time_ms += elapsed_ms;
         timings.push_back(elapsed_ms);
@@ -126,12 +121,9 @@ BenchmarkResult benchmark_pairwise_aos(
     std::vector<double> timings;
     timings.reserve(repetitions);
 
-    for (std::size_t repetition = 0;
-         repetition < repetitions;
-         ++repetition) {
+    for (std::size_t repetition = 0; repetition < repetitions; ++repetition) {
 
-        const auto start =
-            std::chrono::steady_clock::now();
+        const auto start = std::chrono::steady_clock::now();
 
         fastphysics::compute_accelerations_pairwise(
             particles,
@@ -139,13 +131,9 @@ BenchmarkResult benchmark_pairwise_aos(
             softening
         );
 
-        const auto end =
-            std::chrono::steady_clock::now();
+        const auto end = std::chrono::steady_clock::now();
 
-        const double elapsed_ms =
-            std::chrono::duration<double, std::milli>(
-                end - start
-            ).count();
+        const double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
         total_time_ms += elapsed_ms;
         timings.push_back(elapsed_ms);
@@ -185,12 +173,9 @@ BenchmarkResult benchmark_reference_soa(
     std::vector<double> timings;
     timings.reserve(repetitions);
 
-    for (std::size_t repetition = 0;
-         repetition < repetitions;
-         ++repetition) {
+    for (std::size_t repetition = 0; repetition < repetitions; ++repetition) {
 
-        const auto start =
-            std::chrono::steady_clock::now();
+        const auto start = std::chrono::steady_clock::now();
 
         fastphysics::compute_accelerations_soa(
             particles,
@@ -201,10 +186,7 @@ BenchmarkResult benchmark_reference_soa(
         const auto end =
             std::chrono::steady_clock::now();
 
-        const double elapsed_ms =
-            std::chrono::duration<double, std::milli>(
-                end - start
-            ).count();
+        const double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
         total_time_ms += elapsed_ms;
         timings.push_back(elapsed_ms);
@@ -244,12 +226,9 @@ BenchmarkResult benchmark_restructured_soa(
     std::vector<double> timings;
     timings.reserve(repetitions);
 
-    for (std::size_t repetition = 0;
-         repetition < repetitions;
-         ++repetition) {
+    for (std::size_t repetition = 0; repetition < repetitions; ++repetition) {
 
-        const auto start =
-            std::chrono::steady_clock::now();
+        const auto start = std::chrono::steady_clock::now();
 
         fastphysics::compute_accelerations_soa_restructured(
             particles,
@@ -257,8 +236,7 @@ BenchmarkResult benchmark_restructured_soa(
             softening
         );
 
-        const auto end =
-            std::chrono::steady_clock::now();
+        const auto end = std::chrono::steady_clock::now();
 
         const double elapsed_ms =
             std::chrono::duration<double, std::milli>(
@@ -303,12 +281,9 @@ BenchmarkResult benchmark_avx_soa(
     std::vector<double> timings;
     timings.reserve(repetitions);
 
-    for (std::size_t repetition = 0;
-         repetition < repetitions;
-         ++repetition) {
+    for (std::size_t repetition = 0; repetition < repetitions; ++repetition) {
 
-        const auto start =
-            std::chrono::steady_clock::now();
+        const auto start = std::chrono::steady_clock::now();
 
         fastphysics::compute_accelerations_soa_avx(
             particles,
@@ -316,13 +291,67 @@ BenchmarkResult benchmark_avx_soa(
             softening
         );
 
-        const auto end =
-            std::chrono::steady_clock::now();
+        const auto end = std::chrono::steady_clock::now();
 
-        const double elapsed_ms =
-            std::chrono::duration<double, std::milli>(
-                end - start
-            ).count();
+        const double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
+
+        total_time_ms += elapsed_ms;
+        timings.push_back(elapsed_ms);
+
+        if (repetition == 0 || elapsed_ms < best_time_ms) {
+            best_time_ms = elapsed_ms;
+        }
+    }
+
+    return {
+        best_time_ms,
+        calculate_median(timings),
+        total_time_ms / static_cast<double>(repetitions)
+    };
+}
+
+BenchmarkResult benchmark_avx_openmp_soa(
+    const fastphysics::ParticleSystemSoA& initial_particles,
+    std::size_t repetitions,
+    int thread_count
+)
+{
+    auto particles = initial_particles;
+
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
+
+    // Disable dynamic thread adjustment so that OpenMP uses the number
+    // of threads requested by the benchmark.
+    omp_set_dynamic(0);
+    omp_set_num_threads(thread_count);
+
+    // Warm up both the AVX calculation and the OpenMP thread team.
+    fastphysics::compute_accelerations_soa_avx_openmp(
+        particles,
+        gravitational_constant,
+        softening
+    );
+
+    double total_time_ms = 0.0;
+    double best_time_ms = 0.0;
+
+    std::vector<double> timings;
+    timings.reserve(repetitions);
+
+    for (std::size_t repetition = 0; repetition < repetitions; ++repetition) {
+
+        const auto start = std::chrono::steady_clock::now();
+
+        fastphysics::compute_accelerations_soa_avx_openmp(
+            particles,
+            gravitational_constant,
+            softening
+        );
+
+        const auto end = std::chrono::steady_clock::now();
+
+        const double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
         total_time_ms += elapsed_ms;
         timings.push_back(elapsed_ms);
@@ -362,12 +391,9 @@ BenchmarkResult benchmark_pairwise_soa(
     std::vector<double> timings;
     timings.reserve(repetitions);
 
-    for (std::size_t repetition = 0;
-         repetition < repetitions;
-         ++repetition) {
+    for (std::size_t repetition = 0; repetition < repetitions; ++repetition) {
 
-        const auto start =
-            std::chrono::steady_clock::now();
+        const auto start = std::chrono::steady_clock::now();
 
         fastphysics::compute_accelerations_pairwise_soa(
             particles,
@@ -375,13 +401,9 @@ BenchmarkResult benchmark_pairwise_soa(
             softening
         );
 
-        const auto end =
-            std::chrono::steady_clock::now();
+        const auto end = std::chrono::steady_clock::now();
 
-        const double elapsed_ms =
-            std::chrono::duration<double, std::milli>(
-                end - start
-            ).count();
+        const double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
         total_time_ms += elapsed_ms;
         timings.push_back(elapsed_ms);
@@ -431,14 +453,9 @@ void print_result(
 
     if (previous_median_ms > 0.0) {
 
-        const double slowdown =
-            result.median_time_ms
-            / previous_median_ms;
+        const double slowdown = result.median_time_ms / previous_median_ms;
 
-        const double scaling_exponent =
-            calculate_scaling_exponent(
-                slowdown
-            );
+        const double scaling_exponent = calculate_scaling_exponent(slowdown);
 
         std::cout
             << "    slowdown  : "
@@ -450,6 +467,38 @@ void print_result(
     }
 
     std::cout << '\n';
+}
+
+void print_parallel_result(
+    int thread_count,
+    const BenchmarkResult& result,
+    double one_thread_time_ms
+)
+{
+    const double speedup = one_thread_time_ms / result.median_time_ms;
+
+    const double efficiency = speedup / static_cast<double>(thread_count);
+
+    std::cout
+        << "    "
+        << thread_count
+        << " thread";
+
+    if (thread_count != 1) {
+        std::cout << 's';
+    }
+
+    std::cout
+        << '\n'
+        << "      median     : "
+        << result.median_time_ms
+        << " ms\n"
+        << "      speedup    : "
+        << speedup
+        << "x\n"
+        << "      efficiency : "
+        << efficiency * 100.0
+        << "%\n\n";
 }
 
 }
@@ -466,18 +515,32 @@ int main()
 
     constexpr std::size_t repetitions = 15;
 
+    // Test powers of two up to 16 threads, while never requesting more
+    // threads than the number of processors available to OpenMP.
+    const int available_threads = omp_get_num_procs();
+
+    std::vector<int> thread_counts;
+
+    for (int thread_count = 1; thread_count <= available_threads && thread_count <= 16; thread_count *= 2) {
+        thread_counts.push_back(thread_count);
+    }
+
     std::cout
         << "\n"
         << "============================================================\n"
         << " FastPhysics - Gravity Optimization Benchmark\n"
         << "============================================================\n\n"
-        << "Repetitions : "
+        << "Repetitions       : "
         << repetitions
+        << '\n'
+        << "OpenMP processors : "
+        << available_threads
         << "\n\n"
         << "Reference AoS      : N * (N - 1) interactions\n"
         << "Reference SoA      : N * (N - 1) interactions\n"
         << "Restructured SoA   : N * (N - 1) interactions\n"
         << "Manual AVX SoA     : N * (N - 1) interactions\n"
+        << "AVX + OpenMP SoA   : N * (N - 1) interactions\n"
         << "Pairwise AoS       : N * (N - 1) / 2 pairs\n"
         << "Pairwise SoA       : N * (N - 1) / 2 pairs\n\n"
         << "All implementations remain O(N^2).\n"
@@ -541,9 +604,11 @@ int main()
             );
 
         std::cout
+            << "============================================================\n"
             << "N = "
             << particle_count
-            << "\n\n";
+            << "\n"
+            << "============================================================\n\n";
 
         print_result(
             "Reference AoS",
@@ -596,11 +661,7 @@ int main()
             reference_aos.median_time_ms
             / restructured_soa.median_time_ms;
 
-        // Main Day 17 comparison:
-        //
-        //     auto-vectorized GCC code
-        //              vs
-        //     manually written AVX intrinsics
+        // Compare compiler-generated SIMD against manually written AVX.
         //
         // Greater than 1 means Manual AVX is faster.
         const double manual_avx_vs_auto =
@@ -632,12 +693,10 @@ int main()
             restructured_soa.median_time_ms
             / pairwise_soa.median_time_ms;
 
-        // Compare the pairwise solver against our manual AVX solver.
-        //
-        // Greater than 1 means Pairwise SoA is faster.
-        const double pairwise_vs_avx =
-            avx_soa.median_time_ms
-            / pairwise_soa.median_time_ms;
+        // Greater than 1 means Manual AVX is faster than Pairwise SoA.
+        const double avx_vs_pairwise =
+            pairwise_soa.median_time_ms
+            / avx_soa.median_time_ms;
 
         // Total improvement of the pairwise SoA solver over the original.
         const double combined_speedup =
@@ -673,11 +732,86 @@ int main()
             << "    Pairwise vs restructured  : "
             << pairwise_vs_restructured
             << "x\n"
-            << "    Pairwise vs Manual AVX    : "
-            << pairwise_vs_avx
+            << "    Manual AVX vs Pairwise    : "
+            << avx_vs_pairwise
             << "x\n"
             << "    Combined vs original      : "
             << combined_speedup
+            << "x\n\n";
+
+        // OpenMP scaling
+        // The 1-thread OpenMP version is our parallel baseline:
+        //     speedup(p) = T(1) / T(p)
+        //     efficiency(p) = speedup(p) / p
+        // This tells us how well the solver scales as more CPU threads
+        // are used.
+
+        std::cout << "  AVX + OpenMP scaling\n\n";
+
+        std::vector<BenchmarkResult> parallel_results;
+        parallel_results.reserve(
+            thread_counts.size()
+        );
+
+        for (const int thread_count : thread_counts) {
+
+            parallel_results.push_back(
+                benchmark_avx_openmp_soa(
+                    soa_particles,
+                    repetitions,
+                    thread_count
+                )
+            );
+        }
+
+        const double one_thread_time_ms =
+            parallel_results.front().median_time_ms;
+
+        for (std::size_t index = 0; index < thread_counts.size(); ++index) {
+
+            print_parallel_result(
+                thread_counts[index],
+                parallel_results[index],
+                one_thread_time_ms
+            );
+        }
+
+        // Compare the normal serial AVX implementation against the OpenMP
+        // implementation using a single thread. This shows the runtime
+        // overhead introduced by entering the OpenMP parallel region.
+        const double openmp_one_thread_overhead =
+            one_thread_time_ms
+            / avx_soa.median_time_ms;
+
+        // Compare the fastest tested OpenMP configuration against serial AVX.
+        const BenchmarkResult& max_thread_result =
+            parallel_results.back();
+
+        const int max_tested_threads =
+            thread_counts.back();
+
+        const double parallel_vs_serial_avx =
+            avx_soa.median_time_ms
+            / max_thread_result.median_time_ms;
+
+        const double parallel_vs_original =
+            reference_aos.median_time_ms
+            / max_thread_result.median_time_ms;
+
+        std::cout
+            << "  OpenMP summary\n"
+            << "    1-thread OpenMP / serial AVX : "
+            << openmp_one_thread_overhead
+            << "x\n"
+            << "    "
+            << max_tested_threads
+            << "-thread vs serial AVX        : "
+            << parallel_vs_serial_avx
+            << "x\n"
+            << "    "
+            << max_tested_threads
+            << "-thread vs original AoS      : "
+            << parallel_vs_original
             << "x\n\n";
 
         previous_reference_aos =
