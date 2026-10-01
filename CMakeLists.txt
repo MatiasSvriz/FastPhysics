@@ -42,6 +42,7 @@ add_library(
     fastphysics_core
     src/vec3.cpp
     src/gravity.cpp
+    src/barnes_hut.cpp
     src/integrator.cpp
     src/simulation.cpp
     src/scenarios.cpp
@@ -301,6 +302,30 @@ add_test(
     COMMAND gravity_tests
 )
 
+# Barnes-Hut tests
+
+add_executable(
+    barnes_hut_tests
+    tests/barnes_hut_tests.cpp
+)
+
+target_link_libraries(
+    barnes_hut_tests
+    PRIVATE
+    fastphysics_core
+)
+
+set_target_properties(
+    barnes_hut_tests
+    PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+add_test(
+    NAME barnes_hut_tests
+    COMMAND barnes_hut_tests
+)
+
 # Integrator tests
 
 add_executable(
@@ -521,6 +546,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
     target_compile_options(
         gravity_tests
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    target_compile_options(
+        barnes_hut_tests
         PRIVATE
         -Wall
         -Wextra
@@ -774,6 +807,20 @@ if(
 
     target_link_options(
         gravity_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    # Barnes-Hut tests
+
+    target_compile_options(
+        barnes_hut_tests
+        PRIVATE
+        ${FASTPHYSICS_SANITIZER_FLAGS}
+    )
+
+    target_link_options(
+        barnes_hut_tests
         PRIVATE
         ${FASTPHYSICS_SANITIZER_FLAGS}
     )
