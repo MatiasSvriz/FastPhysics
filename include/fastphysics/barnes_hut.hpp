@@ -50,4 +50,46 @@ std::size_t barnes_hut_octant(
     const Vec3& position
 );
 
+// Creates the cubic region for one of the parent's eight octants.
+// The octant index must be between 0 and 7.
+BarnesHutNode make_barnes_hut_child(
+    const BarnesHutNode& parent,
+    std::size_t octant
+);
+
+// Adds a child to nodes and stores its index in the parent.
+// If that octant already has a child, returns its existing index.
+// nodes must contain parent_index, and octant must be between 0 and 7.
+int add_barnes_hut_child(
+    std::vector<BarnesHutNode>& nodes,
+    std::size_t parent_index,
+    std::size_t octant
+);
+
+// Returns true when the node has no children.
+bool barnes_hut_is_leaf(
+    const BarnesHutNode& node
+);
+
+// Inserts one particle index into the octree.
+// A full leaf is subdivided unless the maximum depth has been reached.
+// Each particle index should be inserted once.
+void insert_barnes_hut_particle(
+    std::vector<BarnesHutNode>& nodes,
+    const std::vector<Particle>& particles,
+    std::size_t node_index,
+    std::size_t particle_index
+);
+
+// Computes the total mass and center of mass of a node and its descendants.
+// Uses postorder traversal, children are processed before their parent.
+// Must be called after inserting all particles into the tree.
+// Assumes nonnegative particle masses. Nodes with zero total mass
+// receive a zero center-of-mass vector.
+void update_barnes_hut_mass_properties(
+    std::vector<BarnesHutNode>& nodes,
+    const std::vector<Particle>& particles,
+    std::size_t node_index
+);
+
 }
