@@ -1,6 +1,7 @@
-#include "fastphysics/csv_writer.hpp"
 
-#include <cassert>
+#include "fastphysics/csv_writer.hpp"
+#include "test_helpers.hpp"
+
 #include <sstream>
 #include <string>
 #include <vector>
@@ -8,7 +9,7 @@
 int main()
 {
     // -----------------------------------------------------------------------
-    // Trajectory CSV
+    // Test 1: Trajectory CSV
     // -----------------------------------------------------------------------
 
     {
@@ -23,10 +24,12 @@ int main()
 
         std::ostringstream output;
 
+        // Write CSV header.
         fastphysics::write_csv_header(
             output
         );
 
+        // Write particle snapshot at t = 0.5.
         fastphysics::write_csv_snapshot(
             output,
             0.5,
@@ -37,22 +40,25 @@ int main()
             "time,particle,x,y,z,vx,vy,vz\n"
             "0.5,0,1,2,3,4,5,6\n";
 
-        assert(
+        // Verify exact CSV output.
+        FP_CHECK(
             output.str() == expected
         );
     }
 
     // -----------------------------------------------------------------------
-    // Energy CSV
+    // Test 2: Energy CSV
     // -----------------------------------------------------------------------
 
     {
         std::ostringstream output;
 
+        // Write energy CSV header.
         fastphysics::write_energy_csv_header(
             output
         );
 
+        // Write energy snapshot at t = 0.5.
         fastphysics::write_energy_csv_snapshot(
             output,
             0.5,
@@ -66,8 +72,11 @@ int main()
             "time,kinetic,potential,total,relative_error\n"
             "0.5,0.25,-0.5,-0.25,0.001\n";
 
-        assert(
+        // Verify exact CSV output.
+        FP_CHECK(
             output.str() == expected
         );
     }
+
+    return 0;
 }

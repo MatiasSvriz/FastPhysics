@@ -1,26 +1,15 @@
+
 #include "fastphysics/energy.hpp"
+#include "test_helpers.hpp"
 
-#include <cassert>
-#include <cmath>
 #include <vector>
-
-namespace {
-
-bool almost_equal(
-    double a,
-    double b,
-    double epsilon = 1e-12
-)
-{
-    return std::abs(a - b) < epsilon;
-}
-
-}
 
 int main()
 {
+    using fp_test::almost_equal;
+
     // -----------------------------------------------------------------------
-    // Kinetic energy
+    // Test 1: Kinetic energy
     // -----------------------------------------------------------------------
 
     {
@@ -33,14 +22,18 @@ int main()
             }
         };
 
-        assert(almost_equal(
+        // K = 1/2 * m * v^2
+        // v^2 = 3^2 + 4^2 = 25
+        // K = 1/2 * 2 * 25 = 25
+
+        FP_CHECK(almost_equal(
             fastphysics::kinetic_energy(particles),
             25.0
         ));
     }
 
     // -----------------------------------------------------------------------
-    // Potential energy
+    // Test 2: Potential energy
     // -----------------------------------------------------------------------
 
     {
@@ -59,7 +52,10 @@ int main()
             }
         };
 
-        assert(almost_equal(
+        // U = -G * m1 * m2 / r
+        // U = -1 * 2 * 3 / 2 = -3
+
+        FP_CHECK(almost_equal(
             fastphysics::potential_energy(
                 particles,
                 1.0,
@@ -70,7 +66,7 @@ int main()
     }
 
     // -----------------------------------------------------------------------
-    // Total energy of the reference two-body system
+    // Test 3: Total energy of the reference two-body system
     // -----------------------------------------------------------------------
 
     {
@@ -89,7 +85,16 @@ int main()
             }
         };
 
-        assert(almost_equal(
+        // Total energy:
+        //
+        // E = K + U
+        //
+        // K = 2 * (1/2 * 1 * 0.5^2) = 0.25
+        // U = -1 * 1 * 1 / 2 = -0.5
+        //
+        // E = 0.25 - 0.5 = -0.25
+
+        FP_CHECK(almost_equal(
             fastphysics::total_energy(
                 particles,
                 1.0,
@@ -98,4 +103,6 @@ int main()
             -0.25
         ));
     }
+
+    return 0;
 }

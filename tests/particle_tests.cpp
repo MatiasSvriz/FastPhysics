@@ -1,6 +1,6 @@
-#include "fastphysics/particle.hpp"
 
-#include <cassert>
+#include "fastphysics/particle.hpp"
+#include "test_helpers.hpp"
 
 int main()
 {
@@ -11,12 +11,26 @@ int main()
         10.0
     };
 
-    assert(particle.position.x == 1.0);
-    assert(particle.position.y == 2.0);
-    assert(particle.position.z == 3.0);
+    // --------------------------------------------------
+    // Test 1: Position
+    // --------------------------------------------------
 
-    assert(particle.velocity.x == 4.0);
-    assert(particle.acceleration.z == 9.0);
+    FP_CHECK(particle.position.x == 1.0);
+    FP_CHECK(particle.position.y == 2.0);
+    FP_CHECK(particle.position.z == 3.0);
 
-    assert(particle.mass == 10.0);
+    // --------------------------------------------------
+    // Test 2: Velocity and acceleration
+    // --------------------------------------------------
+
+    FP_CHECK(particle.velocity.x == 4.0);
+    FP_CHECK(particle.acceleration.z == 9.0);
+
+    // --------------------------------------------------
+    // Test 3: Mass
+    // --------------------------------------------------
+
+    FP_CHECK(particle.mass == 10.0);
+
+    return 0;
 }

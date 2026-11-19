@@ -1,20 +1,17 @@
-#include "fastphysics/gravity.hpp"
 
-#include <cassert>
-#include <cmath>
+#include "fastphysics/gravity.hpp"
+#include "test_helpers.hpp"
+
 #include <cstddef>
 #include <vector>
 
 namespace {
 
-bool almost_equal(
-    double a,
-    double b,
-    double epsilon = 1e-12
-)
-{
-    return std::abs(a - b) < epsilon;
-}
+using fp_test::almost_equal;
+
+// --------------------------------------------------
+// Test 1: Two-body reference solver
+// --------------------------------------------------
 
 void test_two_body_reference_solver()
 {
@@ -39,37 +36,39 @@ void test_two_body_reference_solver()
         0.0
     );
 
-    assert(almost_equal(
+    FP_CHECK(almost_equal(
         particles[0].acceleration.x,
         0.75
     ));
 
-    assert(almost_equal(
+    FP_CHECK(almost_equal(
         particles[1].acceleration.x,
         -0.5
     ));
 
-    assert(almost_equal(
+    FP_CHECK(almost_equal(
         particles[0].acceleration.y,
         0.0
     ));
 
-    assert(almost_equal(
+    FP_CHECK(almost_equal(
         particles[0].acceleration.z,
         0.0
     ));
 }
 
+// --------------------------------------------------
+// Test 2: Pairwise matches reference solver
+// --------------------------------------------------
+
 void test_pairwise_matches_reference_solver()
 {
     // Three particles exercise multiple distinct pairs:
     //
-    //     (0, 1)
-    //     (0, 2)
-    //     (1, 2)
-    //
-    // This is more useful than a two-particle system for checking that the
-    // pairwise solver correctly accumulates several interactions.
+    // (0, 1)
+    // (0, 2)
+    // (1, 2)
+
     std::vector<fastphysics::Particle> reference_particles{
         {
             {0.0, 0.0, 0.0},
@@ -91,7 +90,7 @@ void test_pairwise_matches_reference_solver()
         }
     };
 
-    // Both solvers must start from exactly the same physical system.
+    // Both solvers start from identical initial conditions.
     auto pairwise_particles = reference_particles;
 
     constexpr double gravitational_constant = 1.0;
@@ -109,29 +108,31 @@ void test_pairwise_matches_reference_solver()
         softening
     );
 
-    // The algorithms evaluate interactions in a different order, so small
-    // floating-point differences are possible. We therefore compare using
-    // a numerical tolerance instead of exact equality.
+    // Compare accelerations using numerical tolerances.
     for (std::size_t i = 0;
          i < reference_particles.size();
          ++i) {
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             reference_particles[i].acceleration.x,
             pairwise_particles[i].acceleration.x
         ));
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             reference_particles[i].acceleration.y,
             pairwise_particles[i].acceleration.y
         ));
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             reference_particles[i].acceleration.z,
             pairwise_particles[i].acceleration.z
         ));
     }
 }
+
+// --------------------------------------------------
+// Test 3: SoA matches reference solver
+// --------------------------------------------------
 
 void test_soa_matches_reference_solver()
 {
@@ -178,22 +179,26 @@ void test_soa_matches_reference_solver()
 
     for (std::size_t i = 0; i < particles.size(); ++i) {
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             particles[i].acceleration.x,
             soa_particles.acceleration_x[i]
         ));
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             particles[i].acceleration.y,
             soa_particles.acceleration_y[i]
         ));
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             particles[i].acceleration.z,
             soa_particles.acceleration_z[i]
         ));
     }
 }
+
+// --------------------------------------------------
+// Test 4: Pairwise SoA matches reference solver
+// --------------------------------------------------
 
 void test_pairwise_soa_matches_reference_solver()
 {
@@ -226,7 +231,6 @@ void test_pairwise_soa_matches_reference_solver()
     constexpr double gravitational_constant = 1.0;
     constexpr double softening = 0.01;
 
-    // Use the original AoS solver as the correctness reference.
     fastphysics::compute_accelerations(
         particles,
         gravitational_constant,
@@ -239,35 +243,128 @@ void test_pairwise_soa_matches_reference_solver()
         softening
     );
 
-    // The order of floating-point operations is different, so compare
-    // using a tolerance instead of exact equality.
     for (std::size_t i = 0; i < particles.size(); ++i) {
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             particles[i].acceleration.x,
             pairwise_soa_particles.acceleration_x[i]
         ));
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             particles[i].acceleration.y,
             pairwise_soa_particles.acceleration_y[i]
         ));
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             particles[i].acceleration.z,
             pairwise_soa_particles.acceleration_z[i]
         ));
     }
 }
 
+// --------------------------------------------------
+// Test 5: Newton's third law
+// --------------------------------------------------
+
+void test_total_internal_force_is_zero()
+{
+    // Three particles with different positions and masses.
+    std::vector<fastphysics::Particle> particles{
+        {
+            {0.0, 0.0, 0.0},
+            {},
+            {},
+            2.0
+        },
+        {
+            {2.0, 1.0, 0.0},
+            {},
+            {},
+            3.0
+        },
+        {
+            {-1.0, 3.0, 2.0},
+            {},
+            {},
+            4.0
+        }
+    };
+
+    constexpr double gravitational_constant = 1.0;
+    constexpr double softening = 0.01;
+
+    // Calculate gravitational accelerations.
+    fastphysics::compute_accelerations(
+        particles,
+        gravitational_constant,
+        softening
+    );
+
+    // Calculate the total internal force:
+    //
+    // F_total = sum(m_i * a_i)
+
+    fastphysics::Vec3 total_force{};
+
+    double force_scale = 0.0;
+
+    for (const auto& particle : particles) {
+
+        const fastphysics::Vec3 force{
+            particle.mass * particle.acceleration.x,
+            particle.mass * particle.acceleration.y,
+            particle.mass * particle.acceleration.z
+        };
+
+        total_force += force;
+
+        // Accumulate force magnitudes for a relative tolerance.
+        force_scale += fastphysics::norm(force);
+    }
+
+    // Newton's third law:
+    //
+    // F_ij = -F_ji
+    //
+    // Therefore:
+    //
+    // sum(m_i * a_i) = 0
+    //
+    // Allow a small floating-point rounding error.
+
+    constexpr double relative_tolerance = 1e-12;
+    constexpr double absolute_tolerance = 1e-12;
+
+    const double tolerance =
+        absolute_tolerance +
+        relative_tolerance * force_scale;
+
+    FP_CHECK(almost_equal(
+        total_force.x, 0.0, tolerance, 0.0
+    ));
+
+    FP_CHECK(almost_equal(
+        total_force.y, 0.0, tolerance, 0.0
+    ));
+
+    FP_CHECK(almost_equal(
+        total_force.z, 0.0, tolerance, 0.0
+    ));
 }
+
+} // namespace
 
 int main()
 {
     test_two_body_reference_solver();
+
     test_pairwise_matches_reference_solver();
+
     test_soa_matches_reference_solver();
+
     test_pairwise_soa_matches_reference_solver();
+
+    test_total_internal_force_is_zero();
 
     return 0;
 }

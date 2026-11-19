@@ -1,26 +1,15 @@
+
 #include "fastphysics/integrator.hpp"
+#include "test_helpers.hpp"
 
-#include <cassert>
-#include <cmath>
 #include <vector>
-
-namespace {
-
-bool almost_equal(
-    double a,
-    double b,
-    double epsilon = 1e-12
-)
-{
-    return std::abs(a - b) < epsilon;
-}
-
-}
 
 int main()
 {
+    using fp_test::almost_equal;
+
     // -----------------------------------------------------------------------
-    // Explicit Euler
+    // Test 1: Explicit Euler
     // -----------------------------------------------------------------------
 
     {
@@ -38,29 +27,36 @@ int main()
             0.5
         );
 
-        assert(almost_equal(
+        // Euler:
+        // x_new = x + v * dt = 0 + 2 * 0.5 = 1.0
+
+        FP_CHECK(almost_equal(
             particles[0].position.x,
             1.0
         ));
 
-        assert(almost_equal(
+        // v_new = v + a * dt = 2 + 1 * 0.5 = 2.5
+
+        FP_CHECK(almost_equal(
             particles[0].velocity.x,
             2.5
         ));
 
-        assert(almost_equal(
+        // No movement along the y-axis.
+
+        FP_CHECK(almost_equal(
             particles[0].position.y,
             0.0
         ));
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             particles[0].velocity.y,
             0.0
         ));
     }
 
     // -----------------------------------------------------------------------
-    // Velocity Verlet
+    // Test 2: Velocity Verlet
     // -----------------------------------------------------------------------
 
     {
@@ -80,24 +76,29 @@ int main()
 
         // First half kick:
         //
-        // v_half = 2 + 0.5 * 1 * 0.5
+        // v_half = v + (a * dt / 2)
+        //        = 2 + (1 * 0.5 / 2)
         //        = 2.25
-        assert(almost_equal(
+
+        FP_CHECK(almost_equal(
             particles[0].velocity.x,
             2.25
         ));
 
         // Drift:
         //
-        // x_new = 0 + 2.25 * 0.5
+        // x_new = x + v_half * dt
+        //       = 0 + 2.25 * 0.5
         //       = 1.125
-        assert(almost_equal(
+
+        FP_CHECK(almost_equal(
             particles[0].position.x,
             1.125
         ));
 
-        // Simulate the acceleration recomputation performed by Simulation
-        // after particles have moved to their new positions.
+        // Simulate the acceleration recomputation
+        // performed by Simulation after updating positions.
+
         particles[0].acceleration = {
             3.0,
             0.0,
@@ -111,21 +112,27 @@ int main()
 
         // Second half kick:
         //
-        // v_new = 2.25 + 0.5 * 3 * 0.5
+        // v_new = v_half + (a_new * dt / 2)
+        //       = 2.25 + (3 * 0.5 / 2)
         //       = 3.0
-        assert(almost_equal(
+
+        FP_CHECK(almost_equal(
             particles[0].velocity.x,
             3.0
         ));
 
-        assert(almost_equal(
+        // No movement along the y-axis.
+
+        FP_CHECK(almost_equal(
             particles[0].velocity.y,
             0.0
         ));
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             particles[0].position.y,
             0.0
         ));
     }
+
+    return 0;
 }

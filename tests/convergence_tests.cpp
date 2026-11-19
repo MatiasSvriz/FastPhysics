@@ -1,25 +1,13 @@
+
 #include "fastphysics/convergence.hpp"
-
-#include <cassert>
-#include <cmath>
-
-namespace {
-
-bool almost_equal(
-    double a,
-    double b,
-    double epsilon = 1e-12
-)
-{
-    return std::abs(a - b) < epsilon;
-}
-
-}
+#include "test_helpers.hpp"
 
 int main()
 {
+    using fp_test::almost_equal;
+
     // -----------------------------------------------------------------------
-    // Relative error
+    // Test 1: Relative error
     // -----------------------------------------------------------------------
 
     {
@@ -29,14 +17,18 @@ int main()
                 100.0
             );
 
-        assert(almost_equal(
+        // Relative error:
+        //
+        // |105 - 100| / |100| = 0.05
+
+        FP_CHECK(almost_equal(
             error,
             0.05
         ));
     }
 
     // -----------------------------------------------------------------------
-    // First-order convergence
+    // Test 2: First-order convergence
     // -----------------------------------------------------------------------
 
     {
@@ -44,7 +36,8 @@ int main()
         //
         // error ~ h
         //
-        // the observed order must be p = 1.
+        // The observed convergence order must be p = 1.
+
         const double order =
             fastphysics::estimate_convergence_order(
                 0.1,
@@ -53,14 +46,14 @@ int main()
                 0.01
             );
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             order,
             1.0
         ));
     }
 
     // -----------------------------------------------------------------------
-    // Second-order convergence
+    // Test 3: Second-order convergence
     // -----------------------------------------------------------------------
 
     {
@@ -68,7 +61,8 @@ int main()
         //
         // error ~ h^2
         //
-        // the observed order must be p = 2.
+        // The observed convergence order must be p = 2.
+
         const double order =
             fastphysics::estimate_convergence_order(
                 0.1,
@@ -77,19 +71,20 @@ int main()
                 0.01
             );
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             order,
             2.0
         ));
     }
 
     // -----------------------------------------------------------------------
-    // Arbitrary step-size ratio
+    // Test 4: Arbitrary step-size ratio
     // -----------------------------------------------------------------------
 
     {
-        // The general formula must also work when the step size
+        // The formula must also work when the step size
         // is not reduced exactly by a factor of two.
+
         const double order =
             fastphysics::estimate_convergence_order(
                 0.1,
@@ -98,9 +93,11 @@ int main()
                 0.000625
             );
 
-        assert(almost_equal(
+        FP_CHECK(almost_equal(
             order,
             2.0
         ));
     }
+
+    return 0;
 }
